@@ -2,6 +2,8 @@ use std::{fs, process};
 
 use clap::{command, Args, Parser, Subcommand};
 
+use crate::{blog, server};
+
 /// tless command arguments
 #[derive(Parser, Debug)]
 #[command(author = "gdhvxcj <wangnan5117@gmail.com>", version = "0.1.0", about = "Build blog site.", long_about = "Fast and easy blog site builder.")]
@@ -104,6 +106,15 @@ pub enum BlogArgs {
 #[derive(Args, Debug)]
 #[group(required = true, multiple = false)]
 pub struct Site {
+    /// Initialize site structure.
+    /// 
+    /// usage:
+    /// ```bash
+    /// tless site -i
+    /// ```
+    #[clap(short, long)]
+    init: bool,
+
     /// Generate static pages.
     /// 
     /// usage:
@@ -133,53 +144,48 @@ pub struct Site {
 }
 
 /// Parse command line arguments and check the validity.
-pub fn parse_cmd() -> Commands {
+pub fn parse_cmd() {
     let input = Command::parse();
     match input.cmd {
-        Commands::Server(server) => check_server(server),
-        Commands::Blog(blog) => check_blog(blog),
-        Commands::Site(site) => Commands::Site(site)
+        Commands::Server(server) => handle_server(server),
+        Commands::Blog(blog) => handle_blog(blog),
+        Commands::Site(site) => handle_site(site),
     }
 }
 
-fn check_server(server: Server) -> Commands {
+fn handle_server(server: Server) {
     if server.run && server.port > 1024 && server.port < 65_535 {
-        println!("Starting server on port: {}", server.port);
-        Commands::Server(server)
+        server::run(server.port);
     } else {
         println!("Server not started. Use -r to run the server. Port must be between 1025 and 65534.");
         process::exit(1);
     }
 }
 
-fn check_blog(blog: Blog) -> Commands {
+fn handle_blog(blog: Blog) {
     match &blog.cli {
         BlogArgs::Add { name } => {
-            let file_name = format!("draft/{}.md", &name);
-            match fs::exists(&file_name) {
+            let file_path = blog::get_blog_path(name, &"draft".to_string(), None);
+            match fs::exists(&file_path) {
                 Ok(exists) if !exists => {},
                 _ => {
-                    eprintln!("File {} already exists!", file_name);
+                    eprintln!("File {} already exists!", file_path);
                     process::exit(1);
                 }
             }
         },
         BlogArgs::Remove { class, prva, name } => {
-            let file_name = if *prva {
-                format!("{}/{}.prva.md", &class, &name)
-            } else {
-                format!("{}/{}.md", &class, &name)
-            };
-            match fs::exists(&file_name) {
+            let file_path = blog::get_blog_path(name, class, Some(prva));
+            match fs::exists(&file_path) {
                 Ok(exists) if exists => {},
                 _ => {
-                    eprintln!("File {} not exists!", file_name);
+                    eprintln!("File {} not exists!", file_path);
                     process::exit(1);
                 }
             }
         },
         BlogArgs::Publish { prva: _, name } => {
-            let file_name = format!("draft/{}.md", &name);
+            let file_name = blog::get_blog_path(name, &"draft".to_string(), None);
             match fs::exists(&file_name) {
                 Ok(exists) if exists => {},
                 _ => {
@@ -189,5 +195,19 @@ fn check_blog(blog: Blog) -> Commands {
             }
         }
     }
-    Commands::Blog(blog)
+}
+
+fn handle_site(site: Site) {
+    if site.init {
+        println!("Initializing site structure...");
+    } else if site.generate {
+        println!("Generating static pages...");
+    } else if site.deploy {
+        println!("Deploying site to GitHub Pages...");
+    } else if site.backup {
+        println!("Backing up site data...");
+    } else {
+        eprintln!("No valid site operation specified.");
+        process::exit(1);
+    }
 }
