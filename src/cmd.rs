@@ -52,9 +52,18 @@ pub enum BlogArgs {
     /// 
     /// usage:
     /// ```bash
+    /// # add a public blog named 'FirstBlog'
     /// tless blog add FirstBlog
+    /// 
+    /// # add a private blog named 'FirstBlog'
+    /// tless blog add -p FirstBlog
     /// ```
-    Add { name: String },
+    Add {
+        #[arg(short, long)]
+        prva: bool,
+
+        name: String
+    },
 
     /// Remove `class/name`, default class is `draft`.
     /// 
