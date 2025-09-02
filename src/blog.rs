@@ -9,10 +9,13 @@ use std::{env, fs, path};
 /// A `String` representing the full path to the blog file.
 /// # Examples
 /// ```
-/// let path = get_blog_path(&"MyBlog".to_string(), &"draft".to_string(), None);
+/// let name = String::from("MyBlog");
+/// let class = String::from("draft");
+/// 
+/// let path = get_blog_path(&name, &class, None);
 /// assert_eq!(path, "/current/directory/draft/MyBlog.md");
 /// 
-/// let path_prva = get_blog_path(&"MyBlog".to_string(), &"post".to_string(), Some(&true));
+/// let path_prva = get_blog_path(&name, &class, Some(&true));
 /// assert_eq!(path_prva, "/current/directory/post/MyBlog.prva.md");
 /// ```
 pub fn get_blog_path(name: &String, class: &String, prva: Option<&bool>) -> String {
@@ -31,7 +34,7 @@ pub fn get_blog_path(name: &String, class: &String, prva: Option<&bool>) -> Stri
                         .expect("Failed to convert path to string")
                         .to_string(),
     }
-}
+}                                                                                   
 
 /// Check if a blog file exists at the given path.
 /// # Arguments
@@ -49,9 +52,18 @@ pub fn is_blog_exist(path: &String) -> bool {
 
 // todo: add_blog function, utf-8 support
 pub fn add_blog(file_path: &String) {
-    fs::create_dir_all(path::Path::new(&file_path).parent().unwrap())
+    fs::create_dir_all(path::Path::new(&file_path))
             .expect("Failed to create directories");
-    fs::write(file_path, "# New Blog\n\nYour content here.")
+    fs::write(file_path, r#"
+---
+title: New Blog
+date: 2025-05-20 00:00:00
+tags:
+categories:
+---
+
+# New Blog
+Write your content here."#)
         .expect("Failed to create blog file");
     println!("Blog '{}' created in 'draft'.", file_path);
 }

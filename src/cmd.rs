@@ -1,8 +1,8 @@
-use std::{fs, process};
+use std::{env, fs, process};
 
 use clap::{command, Args, Parser, Subcommand};
 
-use crate::{blog, server};
+use crate::{blog, server, site};
 
 /// tless command arguments
 #[derive(Parser, Debug)]
@@ -20,6 +20,9 @@ pub enum Commands {
 
     /// Subcommand that controls blog's `add/remove/publish`
     Blog(Blog),
+
+    /// Subcommand that controls page `add/remove/publish`
+    Page(Page),
 
     /// Subcommand that generates static pages, deploy to github page, backup site, etc.
     Site(Site)
@@ -104,6 +107,35 @@ pub enum BlogArgs {
 }
 
 #[derive(Args, Debug)]
+pub struct Page {
+    #[command(subcommand)]
+    pub cli: PageArgs
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum PageArgs {
+    /// Add a page named `name`.
+    /// If page exists, print failed.
+    /// 
+    /// usage:
+    /// ```bash
+    /// # add a page named 'tags'
+    /// tless page add tags
+    /// ```
+    Add { name: String },
+
+    /// Remove page named `name`.
+    /// If page not exists, print failed.
+    /// 
+    /// usage:
+    /// ```bash
+    /// # remove a page named 'tags'
+    /// tless page remove tags
+    /// ```
+    Remove { name: String }
+}
+
+#[derive(Args, Debug)]
 #[group(required = true, multiple = false)]
 pub struct Site {
     /// Initialize site structure.
@@ -149,8 +181,14 @@ pub fn parse_cmd() {
     match input.cmd {
         Commands::Server(server) => handle_server(server),
         Commands::Blog(blog) => handle_blog(blog),
+        Commands::Page(page) => handle_page(page),
         Commands::Site(site) => handle_site(site),
     }
+}
+
+fn is_conf_exist() -> bool {
+    let current_dir = env::current_dir().expect("Failed to get current directory");
+    current_dir.join("tless.toml").exists()
 }
 
 fn handle_server(server: Server) {
@@ -165,34 +203,24 @@ fn handle_server(server: Server) {
 fn handle_blog(blog: Blog) {
     match &blog.cli {
         BlogArgs::Add { name } => {
-            let file_path = blog::get_blog_path(name, &"draft".to_string(), None);
-            match fs::exists(&file_path) {
-                Ok(exists) if !exists => {},
-                _ => {
-                    eprintln!("File {} already exists!", file_path);
-                    process::exit(1);
-                }
-            }
+            
         },
         BlogArgs::Remove { class, prva, name } => {
-            let file_path = blog::get_blog_path(name, class, Some(prva));
-            match fs::exists(&file_path) {
-                Ok(exists) if exists => {},
-                _ => {
-                    eprintln!("File {} not exists!", file_path);
-                    process::exit(1);
-                }
-            }
+            
         },
         BlogArgs::Publish { prva: _, name } => {
-            let file_name = blog::get_blog_path(name, &"draft".to_string(), None);
-            match fs::exists(&file_name) {
-                Ok(exists) if exists => {},
-                _ => {
-                    eprintln!("File {} not exists!", file_name);
-                    process::exit(1);
-                }
-            }
+            
+        }
+    }
+}
+
+fn handle_page(page: Page) {
+    match &page.cli {
+        PageArgs::Add { name } => {
+            
+        },
+        PageArgs::Remove { name } => {
+            
         }
     }
 }
@@ -200,6 +228,7 @@ fn handle_blog(blog: Blog) {
 fn handle_site(site: Site) {
     if site.init {
         println!("Initializing site structure...");
+        site::init();
     } else if site.generate {
         println!("Generating static pages...");
     } else if site.deploy {
