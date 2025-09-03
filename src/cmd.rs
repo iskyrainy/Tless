@@ -81,9 +81,6 @@ pub enum BlogArgs {
         #[arg(short, long, default_value = "draft")]
         class: String,
 
-        #[arg(short, long)]
-        prva: bool,
-
         name: String
     },
 
@@ -204,9 +201,15 @@ fn handle_server(server: Server) {
 fn handle_blog(blog: Blog) {
     match &blog.cli {
         BlogArgs::Add { name } => {
-            
+            match blog::add_blog(name) {
+                Ok(_) => {},
+                Err(e) => {
+                    eprintln!("Failed to add blog: {}", e);
+                    process::exit(1);
+                }
+            }
         },
-        BlogArgs::Remove { class, prva, name } => {
+        BlogArgs::Remove { class, name } => {
             
         },
         BlogArgs::Publish { prva: _, name } => {
