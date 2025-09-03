@@ -1,38 +1,42 @@
-use std::{env, fs, path};
+use std::{env, error::Error, fs, io::Read, path};
 
-/// Get the full path of a blog file based on its name, class, and whether it's a private draft.
-/// # Arguments
-/// * `name` - The name of the blog file (without extension).
-/// * `class` - The class of the blog (e.g., "draft", "post").
-/// * `prva` - An optional boolean indicating if the blog is a private draft.
-/// # Returns
-/// A `String` representing the full path to the blog file.
-/// # Examples
-/// ```
-/// let name = String::from("MyBlog");
-/// let class = String::from("draft");
-/// 
-/// let path = get_blog_path(&name, &class, None);
-/// assert_eq!(path, "/current/directory/draft/MyBlog.md");
-/// 
-/// let path_prva = get_blog_path(&name, &class, Some(&true));
-/// assert_eq!(path_prva, "/current/directory/post/MyBlog.prva.md");
-/// ```
-pub fn get_blog_path(name: &String, class: &String, prva: Option<&bool>) -> String {
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Metadata {
+    title: String,
+    date: String,
+    tags: Option<Vec<String>>,
+    categories: Option<Vec<String>>,
+    content: String
+}
+
+fn parse_blog(file: fs::File, header: String) -> Result<Metadata, Box<dyn Error>> {
+    let mut text;
+    if let Err(e) = file.read_to_string(text) {
+        return Err("Failed to read blog.".into());
+    }
+    let (frontmatter, markdown_content) = frontmatter_gen::extract(&text)?;
+    if let Some(title) = frontmatter.get("title").and_then(|v| v.as_str()) {
+        println!("Title: {}", title);
+    }
+    Ok(Metadata {
+        title: , date: (), tags: (), categories: (), content: ()
+    })
+}
+
+pub fn get_blog(name: &String, class: &String, prva: Option<&bool>) -> Option<fs::File> {
     let current_dir = env::current_dir().expect("Failed to get current directory");
     match prva {
-        Some(true) => current_dir.join("post")
-                        .join(name)
-                        .with_extension("prva.md")
-                        .to_str()
-                        .expect("Failed to convert path to string")
-                        .to_string(),
-        _ => current_dir.join(class)
-                        .join(name)
-                        .with_extension("md")
-                        .to_str()
-                        .expect("Failed to convert path to string")
-                        .to_string(),
+        Some(true) => {
+            if let Ok(file) = fs::File::open(current_dir.join("source")
+                        .join(class)
+                        .join("name")
+                        .with_extension("md")) {
+                
+            }
+        },
+        _ => ,
     }
 }                                                                                   
 

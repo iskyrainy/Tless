@@ -186,12 +186,13 @@ pub fn parse_cmd() {
     }
 }
 
-fn is_conf_exist() -> bool {
-    let current_dir = env::current_dir().expect("Failed to get current directory");
-    current_dir.join("tless.toml").exists()
-}
-
 fn handle_server(server: Server) {
+    let current_dir = env::current_dir().expect("Failed to get current directory");
+    if !current_dir.join("tless.toml").exists() {
+        eprintln!("Can't find configure file in current dir.");
+        process::exit(1);
+    }
+    // check config file
     if server.run && server.port > 1024 && server.port < 65_535 {
         server::run(server.port);
     } else {
