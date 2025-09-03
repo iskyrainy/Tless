@@ -210,10 +210,22 @@ fn handle_blog(blog: Blog) {
             }
         },
         BlogArgs::Remove { class, name } => {
-            
+            match blog::remove_blog(name, class) {
+                Ok(_) => {},
+                Err(e) => {
+                    eprintln!("Failed to remove blog: {}", e);
+                    process::exit(1);
+                }
+            }
         },
-        BlogArgs::Publish { prva: _, name } => {
-            
+        BlogArgs::Publish { prva, name } => {
+            match blog::publish_blog(name, *prva) {
+                Ok(_) => {},
+                Err(e) => {
+                    eprintln!("Failed to publish blog: {}", e);
+                    process::exit(1);
+                }
+            }
         }
     }
 }
