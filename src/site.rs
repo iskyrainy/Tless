@@ -47,6 +47,7 @@ title = ""
 description = ""
 author = ""
 url = ""
+zone = ""
 favicon = ""
 menu = [
     { name = "Home", link = "/" }

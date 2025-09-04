@@ -1,8 +1,8 @@
-use std::{env, fs, process};
+use std::{env, process};
 
 use clap::{command, Args, Parser, Subcommand};
 
-use crate::{blog, server, site};
+use crate::{file::{blog, page}, result_matcher, server, site};
 
 /// tless command arguments
 #[derive(Parser, Debug)]
@@ -200,44 +200,16 @@ fn handle_server(server: Server) {
 
 fn handle_blog(blog: Blog) {
     match &blog.cli {
-        BlogArgs::Add { name } => {
-            match blog::add_blog(name) {
-                Ok(_) => {},
-                Err(e) => {
-                    eprintln!("Failed to add blog: {}", e);
-                    process::exit(1);
-                }
-            }
-        },
-        BlogArgs::Remove { class, name } => {
-            match blog::remove_blog(name, class) {
-                Ok(_) => {},
-                Err(e) => {
-                    eprintln!("Failed to remove blog: {}", e);
-                    process::exit(1);
-                }
-            }
-        },
-        BlogArgs::Publish { prva, name } => {
-            match blog::publish_blog(name, *prva) {
-                Ok(_) => {},
-                Err(e) => {
-                    eprintln!("Failed to publish blog: {}", e);
-                    process::exit(1);
-                }
-            }
-        }
+        BlogArgs::Add { name } => result_matcher!(blog::add_blog(name), "Failed to add blog"),
+        BlogArgs::Remove { class, name } => result_matcher!(blog::remove_blog(name, class), "Failed to remove blog"),
+        BlogArgs::Publish { prva, name } => result_matcher!(blog::publish_blog(name, *prva), "Failed to publish blog")
     }
 }
 
 fn handle_page(page: Page) {
     match &page.cli {
-        PageArgs::Add { name } => {
-            
-        },
-        PageArgs::Remove { name } => {
-            
-        }
+        PageArgs::Add { name } => result_matcher!(page::add_page(name), "Failed to add page"),
+        PageArgs::Remove { name } => result_matcher!(page::remove_page(name), "Failed to remove page")
     }
 }
 
