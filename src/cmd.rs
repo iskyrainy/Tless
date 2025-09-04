@@ -2,7 +2,7 @@ use std::{env, process};
 
 use clap::{command, Args, Parser, Subcommand};
 
-use crate::{file::{blog, page}, result_matcher, server, site};
+use crate::{file::{blog, page}, result_matcher, server::{run}, site};
 
 /// tless command arguments
 #[derive(Parser, Debug)]
@@ -191,7 +191,7 @@ fn handle_server(server: Server) {
     }
     // check config file
     if server.run && server.port > 1024 && server.port < 65_535 {
-        server::run(server.port);
+        run::run(server.port);
     } else {
         println!("Server not started. Use -r to run the server. Port must be between 1025 and 65534.");
         process::exit(1);
@@ -216,7 +216,7 @@ fn handle_page(page: Page) {
 fn handle_site(site: Site) {
     if site.init {
         println!("Initializing site structure...");
-        site::init();
+        result_matcher!(site::init(), "Failed to initialize site structure");
     } else if site.generate {
         println!("Generating static pages...");
     } else if site.deploy {

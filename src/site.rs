@@ -1,39 +1,38 @@
-use std::{env, fs, process};
+use std::{env, error::Error, fs};
 
 /// Initialize the site structure in the current directory.
-pub fn init() {
+pub fn init() -> Result<(), Box<dyn Error>> {
     let current_dir = env::current_dir().expect("Failed to get current directory");
     // init site directory
     let current_dir = current_dir.join("blog");
     if current_dir.exists() {
-        eprintln!("Directory 'blog' already exists in current path.");
-        process::exit(1);
+        return Err("Site directory already exists.".into());
     }
-    fs::create_dir(&current_dir).expect("Failed to create site directory");
+    fs::create_dir(&current_dir)?;
 
     // init config file
     let conf_path = current_dir.join("tless.toml");
-    fs::write(&conf_path, base_config_text())
-        .expect("Failed to create configuration file");
+    fs::write(&conf_path, base_config_text())?;
 
     // init directory structure
     let dirs = vec!["source", "theme", "plugin", "statistic"];
     for dir in dirs {
-        fs::create_dir(current_dir.join(dir))
-            .unwrap_or_else(|_| panic!("Failed to create directory: {}", dir));
+        fs::create_dir(current_dir.join(dir))?;
     }
     let blog_dirs = vec!["draft", "post", "page"];
     for dir in blog_dirs {
-        fs::create_dir(current_dir.join("source").join(dir))
-            .unwrap_or_else(|_| panic!("Failed to create directory: {}", dir));
+        fs::create_dir(current_dir.join("source").join(dir))?;
     }
 
     // init base theme layout
     let theme_dir = current_dir.join("theme").join("base");
-    fs::create_dir(&theme_dir)
-        .expect("Failed to create directory: base");
-    fs::write(theme_dir.join("index.html"), base_theme_text())
-        .expect("Failed to create index.html");
+    fs::create_dir(&theme_dir)?;
+    let layout_dir = theme_dir.join("layout");
+    fs::create_dir(&layout_dir)?;
+    let resource_dir = theme_dir.join("resource");
+    fs::create_dir(&resource_dir)?;
+    fs::write(layout_dir.join("index.html"), base_theme_text())?;
+    Ok(())
 }
 
 /// Generate a base configuration file content.
@@ -48,6 +47,7 @@ description = ""
 author = ""
 url = ""
 zone = ""
+theme = "base"
 favicon = ""
 menu = [
     { name = "Home", link = "/" }

@@ -1,4 +1,4 @@
-use axum::{routing::get, serve, Router};
+use axum::{extract::Path, routing::get, serve, Router};
 use tokio::net;
 
 
@@ -9,4 +9,8 @@ pub async fn run(port: u16) {
     let listener = net::TcpListener::bind(addr).await.expect("Failed to bind to address");
     println!("Starting server on port: {}", port);
     serve::serve(listener, app).await.expect("Server failed");
+}
+
+async fn get_list(Path(class): Path<String>) -> Vec<String> {
+    vec![]
 }

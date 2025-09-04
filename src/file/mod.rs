@@ -1,3 +1,6 @@
+//! Module for handling blog and page files, including adding, removing, and parsing metadata.
+//! It provides functions to manage blog posts and pages in a static site generator context.
+
 use std::{env, error::Error, fs, io::Read, path};
 
 use serde::{Deserialize, Serialize};
@@ -38,6 +41,18 @@ impl Metadata {
     }
 }
 
+/// Get the file path for a blog or page based on its name and class.
+/// # Arguments
+/// * `name` - A reference to a `String` representing the name of the blog or page.
+/// * `class` - A reference to a `String` representing the class (e.g., "post", "draft", "page").
+/// # Returns
+/// A `String` representing the full file path.
+/// # Examples
+/// ```
+/// let name = String::from("my_blog");
+/// let class = String::from("post");
+/// assert_eq!(get_path(&name, &class), "/current/directory/source/post/my_blog.md");
+/// ```
 pub(crate) fn get_path(name: &String, class: &String) -> String {
     let current_dir = env::current_dir().expect("Failed to get current directory");
     current_dir.join("source")
