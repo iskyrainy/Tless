@@ -191,7 +191,7 @@ fn handle_server(server: Server) {
     }
     // check config file
     if server.run && server.port > 1024 && server.port < 65_535 {
-        run::run(server.port);
+        result_matcher!(run::run(server.port), "Failed to start server");
     } else {
         println!("Server not started. Use -r to run the server. Port must be between 1025 and 65534.");
         process::exit(1);
