@@ -83,7 +83,6 @@ pub(crate) async fn watch_config(mut shutdown_rx: tokio::sync::broadcast::Receiv
                             println!("Configuration reloaded.");
                         },
                         notify::EventKind::Remove(_) => {
-                            result_matcher!(watcher.unwatch(&config_path), "Failed to unwatch old config file");
                             result_matcher!(watcher.watch(&config_path, notify::RecursiveMode::NonRecursive), "Failed to re-watch config file");
                         },
                         _ => {}
@@ -220,10 +219,6 @@ pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiv
                             SITE.store(Arc::new(get_site()));
                             dbg!(SITE.load());
                             println!("Site global info reloaded.");
-                        },
-                        notify::EventKind::Remove(_) => {
-                            result_matcher!(watcher.unwatch(&source_path), "Failed to unwatch old source dir");
-                            result_matcher!(watcher.watch(&source_path, notify::RecursiveMode::Recursive), "Failed to re-watch source dir");
                         },
                         _ => {}
                     }
