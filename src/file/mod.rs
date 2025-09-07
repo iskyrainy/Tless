@@ -16,8 +16,8 @@ pub mod page;
 /// * `categories` - Optional categories associated with the blog.
 /// * `prva` - A boolean indicating if the blog is private.
 /// * `content` - The main content of the blog in markdown format.
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct Metadata {
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Metadata {
     pub title: String,
     pub date: String,
     pub layout: Option<String>,
@@ -28,7 +28,7 @@ pub(crate) struct Metadata {
 }
 
 impl Metadata {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Metadata {
             title: String::new(),
             date: String::new(),
@@ -91,7 +91,7 @@ pub(crate) fn is_file_exist(file_path: &String) -> bool {
 /// let metadata = parse_blog(file).unwrap();
 /// assert_eq!(metadata.title, "Blog Title");
 /// ```
-pub(crate) fn parse_file(mut file: fs::File) -> Result<Metadata, Box<dyn Error>> {
+pub fn parse_file(mut file: fs::File) -> Result<Metadata, Box<dyn Error>> {
     let mut text = String::new();
     if let Err(_) = file.read_to_string(&mut text) {
         return Err("Failed to read blog.".into());

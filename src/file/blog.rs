@@ -25,7 +25,7 @@ pub fn add_blog(name: &String) -> Result<(), Box<dyn Error>> {
     if is_file_exist(&file_path) {
         return Err("Blog already exists.".into());
     }
-    // todo: time zone support
+    // TODO: time zone support
     fs::write(&file_path, base_blog_text(name))?;
     println!("Blog '{}' created in 'draft'.", file_path);
     Ok(())
@@ -89,7 +89,7 @@ pub fn publish_blog(name: &String, prva: bool) -> Result<(), Box<dyn Error>> {
     }
     let file = fs::File::open(&draft_path)?;
     let metadata = parse_file(file)?;
-    // todo: time zone support
+    // TODO: time zone support
     let frontmatter = format!(
         "---\ntitle: {}\ndate: {}\ntags: {}\ncategories: {}\nprva: {}\n---\n\n",
         metadata.title,

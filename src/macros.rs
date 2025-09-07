@@ -18,7 +18,7 @@ macro_rules! result_matcher {
                 eprintln!("{}: {}", $err_msg, err);
                 std::process::exit(1);
             }
-            Ok(_) => {}
+            Ok(suc) => suc
         }
     };
     ($result:expr, $err_msg:expr, $suc_msg:expr) => {
@@ -27,21 +27,25 @@ macro_rules! result_matcher {
                 eprintln!("{}: {}", $err_msg, err);
                 std::process::exit(1);
             }
-            Ok(_) => {
+            Ok(suc) => {
                 println!("{}", $suc_msg);
+                return suc;
             }
         }
     };
     ($result:expr, err_handler = $err_handler:expr) => {
         match $result {
             Err(err) => $err_handler(err),
-            Ok(_) => {}
+            Ok(suc) => suc
         }
     };
     ($result:expr, err_handler = $err_handler:expr, ok_handler = $ok_handler:expr) => {
         match $result {
             Err(err) => $err_handler(err),
-            Ok(ok) => $ok_handler(ok),
+            Ok(ok) => {
+                $ok_handler(ok);
+                return suc;
+            },
         }
     };
 }
