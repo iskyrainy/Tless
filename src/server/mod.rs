@@ -216,13 +216,14 @@ pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiv
                 Ok(event) => {
                     match event.kind {
                         notify::EventKind::Modify(_) => {
+                            // TODO: avoid read when writing
                             SITE.store(Arc::new(get_site()));
                             dbg!(SITE.load());
                             println!("Site global info reloaded.");
                         },
                         notify::EventKind::Remove(_) => {
-                            result_matcher!(watcher.unwatch(&source_path), "Failed to unwatch old config file");
-                            result_matcher!(watcher.watch(&source_path, notify::RecursiveMode::Recursive), "Failed to re-watch config file");
+                            result_matcher!(watcher.unwatch(&source_path), "Failed to unwatch old source dir");
+                            result_matcher!(watcher.watch(&source_path, notify::RecursiveMode::Recursive), "Failed to re-watch source dir");
                         },
                         _ => {}
                     }
