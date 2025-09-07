@@ -216,7 +216,7 @@ pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiv
                 Ok(event) => {
                     match event.kind {
                         notify::EventKind::Modify(_) => {
-                            // TODO: avoid read when writing
+                            // FIXME: avoid read when writing
                             SITE.store(Arc::new(get_site()));
                             dbg!(SITE.load());
                             println!("Site global info reloaded.");
