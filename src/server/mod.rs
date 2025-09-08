@@ -1,7 +1,8 @@
-use std::{collections::HashMap, env, error::Error, fs, path::PathBuf, sync::{mpsc, Arc, LazyLock}};
+use std::{collections::HashMap, env, error::Error, fs, path::{self, PathBuf}, sync::{mpsc, Arc, LazyLock}, time::Duration};
 
 use arc_swap::ArcSwap;
 use notify::Watcher;
+use notify_debouncer_mini::new_debouncer;
 use serde::{Deserialize, Serialize};
 
 use crate::{file::{parse_file, Metadata}, result_matcher};
@@ -159,7 +160,6 @@ pub(crate) fn get_source_path() -> PathBuf {
 /// Load files' [Metadata] of `./source` into `SITE`.
 pub(crate) fn get_site() -> Site {
     let source_dir = get_source_path();
-    // TODO: update Metadata, load `draft` file into `SITE`
     let post_dir = source_dir.join("post");
     let page_dir = source_dir.join("page");
     let site = Site::new();
@@ -168,11 +168,15 @@ pub(crate) fn get_site() -> Site {
         dirs.iter().for_each(|dir| {
             if let Ok(dir) = fs::read_dir(dir) {
                 for entry in dir {
-                    let entry = entry.unwrap();
-                    if !entry.metadata().unwrap().is_file() {
+                    let entry = match entry {
+                        Ok(e) => e,
+                        Err(_) => continue,
+                    };
+                    let path = entry.path();
+                    if !is_source_file(&path) {
                         continue;
                     }
-                    let file = result_matcher!(fs::File::open(entry.path()), "Failed to open and parse file");
+                    let file = result_matcher!(fs::File::open(&path), "Failed to open file");
                     let metadata = result_matcher!(parse_file(file), "Failed to parse file");
                     site.posts.push(metadata.clone());
                     if let Some(categories) = metadata.categories.as_ref() {
@@ -187,6 +191,18 @@ pub(crate) fn get_site() -> Site {
                             }
                         }
                     }
+                    if let Some(tags) = metadata.tags.as_ref() {
+                        for c in tags {
+                            if let Some(map) = site.tags.get_mut(c) {
+                                map.posts.push(metadata.clone());
+                            } else {
+                                let mut new_map = ClassMap::new();
+                                new_map.name = c.clone();
+                                new_map.posts.push(metadata.clone());
+                                site.tags.insert(c.clone(), new_map);
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -196,42 +212,69 @@ pub(crate) fn get_site() -> Site {
     load(site, vec![post_dir, page_dir])
 }
 
+/// Only accept valid source files
+fn is_source_file(path: &path::Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+        // skip temp/backup files
+        if name.starts_with('.') 
+            || name.ends_with('~') 
+            || name.ends_with(".swp") {
+            return false;
+        }
+    }
+    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+        matches!(ext, "md" | "markdown" | "toml")
+    } else {
+        false
+    }
+}
+
 pub(crate) static SITE: LazyLock<ArcSwap<Site>> = LazyLock::new(|| {
     let site = get_site();
     ArcSwap::from_pointee(site)
 });
 
-pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> Result<(), Box<dyn Error>> {
+pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,) -> Result<(), Box<dyn Error>> {
     let source_path = get_source_path();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let mut watcher = notify::recommended_watcher(tx)?;
-    watcher.watch(&source_path, notify::RecursiveMode::Recursive)?;
+
+    // notify-debouncer-mini debounce window size: 1000ms
+    let (tx, rx) = mpsc::channel();
+    let mut debouncer = new_debouncer(Duration::from_millis(1000), tx)?;
+    debouncer.watcher().watch(&source_path, notify::RecursiveMode::Recursive)?;
+
     loop {
         if shutdown_rx.try_recv().is_ok() {
             break;
         }
-        match rx.try_recv() {
+        match rx.recv_timeout(Duration::from_millis(200)) {
             Ok(res) => match res {
-                Ok(event) => {
-                    match event.kind {
-                        notify::EventKind::Modify(_) => {
-                            // FIXME: avoid read when writing
-                            SITE.store(Arc::new(get_site()));
-                            dbg!(SITE.load());
-                            println!("Site global info reloaded.");
-                        },
-                        _ => {}
+                // FIXME: big problem -> keeping reload SITE
+                Ok(events) => {
+                    let interesting = events.iter().any(|e| {
+                        is_source_file(&e.path)
+                    });
+                    dbg!(events);
+
+                    if interesting {
+                        let _ = tokio::task::spawn_blocking(|| {
+                            let site = get_site();
+                            SITE.store(Arc::new(site));
+                        }).await;
+                        println!("Site global info reloaded.");
                     }
-                },
-                Err(e) => println!("config file watch error: {:?}", e),
+                }
+                Err(e) => eprintln!("watch error: {:?}", e),
             },
-            Err(mpsc::TryRecvError::Empty) => {
-                // Empty, sleep for a second
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // idle wait
                 tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
             }
             Err(e) => {
-                println!("receive error: {:?}", e);
-                return Err("Failed to receive config file change event.".into());
+                eprintln!("channel error: {:?}", e);
+                break;
             }
         }
     }
