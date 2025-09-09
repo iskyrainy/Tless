@@ -174,6 +174,23 @@ pub(crate) fn get_site() -> Site {
     let page_dir = source_dir.join("page");
     let site = Site::new();
 
+    let class_path = |c: &String, t: &'static str| -> String {
+        let config = CONFIG.load();
+        format!(
+            "{}/{}/{}",
+            {
+                let base_url = config.site.url.to_string();
+                if base_url == "/" {
+                    "".to_string()
+                } else {
+                    base_url
+                }
+            },
+            t,
+            c
+        )
+    };
+
     let load = |mut site: Site, dirs: Vec<PathBuf>| -> Site {
         dirs.iter().for_each(|dir| {
             if let Ok(dir) = fs::read_dir(dir) {
@@ -195,24 +212,7 @@ pub(crate) fn get_site() -> Site {
                                 map.posts.push(metadata.clone());
                             } else {
                                 let mut new_map = ClassMap::new(c.clone());
-                                new_map.path = format!(
-                                    "{}{}",
-                                    {
-                                        let config = CONFIG.load();
-                                        let base_url = &config.site.url;
-                                        base_url.to_string()
-                                    },
-                                    {
-                                        let config = CONFIG.load();
-                                        let menu = config.site.menu.iter().find(|&menu| {
-                                            menu.name.eq(c)
-                                        });
-                                        match menu {
-                                            Some(m) => m.link.to_string(),
-                                            _ => "".to_string()
-                                        }
-                                    }
-                                );
+                                new_map.path = class_path(c, "categories");
                                 new_map.posts.push(metadata.clone());
                                 site.categories.insert(c.to_string(), new_map);
                             }
@@ -224,6 +224,7 @@ pub(crate) fn get_site() -> Site {
                                 map.posts.push(metadata.clone());
                             } else {
                                 let mut new_map = ClassMap::new(c.clone());
+                                new_map.path = class_path(c, "tags");
                                 new_map.posts.push(metadata.clone());
                                 site.tags.insert(c.to_string(), new_map);
                             }
