@@ -6,7 +6,7 @@ use crate::server;
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 pub async fn run(port: u16) -> std::io::Result<()> {
     // Start watching file change
-    let (shutdown_tx, _shutdown_rx) = tokio::sync::broadcast::channel(1);
+    let (shutdown_tx, _) = tokio::sync::broadcast::channel(1);
     server::start_watch_config(shutdown_tx.clone());
     server::start_watch_source(shutdown_tx.clone());
 

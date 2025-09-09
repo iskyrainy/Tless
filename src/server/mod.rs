@@ -1,8 +1,8 @@
-use std::{collections::HashMap, env, error::Error, fs, path::{self, PathBuf}, sync::{mpsc, Arc, LazyLock}, time::Duration};
+use std::{collections::HashMap, env, error::Error, fs, path::{self, PathBuf}, sync::{Arc, LazyLock, mpsc}, time::Duration};
 
 use arc_swap::ArcSwap;
-use notify::Watcher;
-use notify_debouncer_mini::new_debouncer;
+use notify::EventKind;
+use notify_debouncer_full::new_debouncer;
 use serde::{Deserialize, Serialize};
 
 use crate::{file::{parse_file, Metadata}, result_matcher};
@@ -67,36 +67,45 @@ pub(crate) static CONFIG: LazyLock<ArcSwap<Config>> = LazyLock::new(|| {
 /// * `shutdown_rx` - A receiver to listen for shutdown signals.
 pub(crate) async fn watch_config(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> Result<(), Box<dyn Error>> {
     let config_path = get_config_path();
+
+    // notify-debouncer-mini debounce window size: 1000ms
     let (tx, rx) = std::sync::mpsc::channel();
-    let mut watcher = notify::recommended_watcher(tx)?;
-    watcher.watch(&config_path, notify::RecursiveMode::NonRecursive)?;
+    let mut debouncer = new_debouncer(Duration::from_millis(1000), None, tx)?;
+    debouncer.watch(&config_path, notify::RecursiveMode::NonRecursive)?;
+
     loop {
         if shutdown_rx.try_recv().is_ok() {
             break;
         }
         match rx.try_recv() {
             Ok(res) => match res {
-                Ok(event) => {
-                    match event.kind {
-                        notify::EventKind::Modify(_) => {
-                            CONFIG.store(Arc::new(get_config_toml()));
-                            dbg!(CONFIG.load());
-                            println!("Configuration reloaded.");
-                        },
-                        notify::EventKind::Remove(_) => {
-                            result_matcher!(watcher.watch(&config_path, notify::RecursiveMode::NonRecursive), "Failed to re-watch config file");
-                        },
-                        _ => {}
+                Ok(events) => {
+                    let interesting = events.iter().any(|e| {
+                        let event = &e.event;
+                        match event.kind {
+                            EventKind::Modify(_) => true,
+                            EventKind::Create(_) | EventKind::Remove(_) => {
+                                result_matcher!(debouncer.watch(&config_path, notify::RecursiveMode::NonRecursive), "Config file watch error");
+                                true
+                            }
+                            _ => false
+                        }
+                    });
+                    if interesting {
+                        let _ = tokio::task::spawn_blocking(|| {
+                            let config = get_config_toml();
+                            CONFIG.store(Arc::new(config));
+                        }).await;
+                        println!("Config reloaded.")
                     }
                 },
-                Err(e) => println!("config file watch error: {:?}", e),
+                Err(e) => println!("Config file watch error: {:?}", e),
             },
             Err(mpsc::TryRecvError::Empty) => {
-                // Empty, sleep for a second
-                tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                // idle, sleep for 250ms
+                tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
             }
-            Err(e) => {
-                println!("receive error: {:?}", e);
+            Err(_) => {
                 return Err("Failed to receive config file change event.".into());
             }
         }
@@ -146,8 +155,8 @@ pub(crate) struct ClassMap {
 }
 
 impl ClassMap {
-    pub fn new() -> Self {
-        ClassMap { name: String::new(), path: String::new(), posts: vec![] }
+    pub fn new(name: String) -> Self {
+        ClassMap { name: name.clone(), path: format!("/{}", name), posts: vec![] }
     }
 }
 
@@ -184,10 +193,9 @@ pub(crate) fn get_site() -> Site {
                             if let Some(map) = site.categories.get_mut(c) {
                                 map.posts.push(metadata.clone());
                             } else {
-                                let mut new_map = ClassMap::new();
-                                new_map.name = c.clone();
+                                let mut new_map = ClassMap::new(c.clone());
                                 new_map.posts.push(metadata.clone());
-                                site.categories.insert(c.clone(), new_map);
+                                site.categories.insert(c.to_string(), new_map);
                             }
                         }
                     }
@@ -196,10 +204,9 @@ pub(crate) fn get_site() -> Site {
                             if let Some(map) = site.tags.get_mut(c) {
                                 map.posts.push(metadata.clone());
                             } else {
-                                let mut new_map = ClassMap::new();
-                                new_map.name = c.clone();
+                                let mut new_map = ClassMap::new(c.clone());
                                 new_map.posts.push(metadata.clone());
-                                site.tags.insert(c.clone(), new_map);
+                                site.tags.insert(c.to_string(), new_map);
                             }
                         }
                     }
@@ -226,7 +233,7 @@ fn is_source_file(path: &path::Path) -> bool {
         }
     }
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-        matches!(ext, "md" | "markdown" | "toml")
+        matches!(ext, "md" | "markdown" | "toml") && !path.to_str().unwrap_or_default().contains("/draft/")
     } else {
         false
     }
@@ -242,21 +249,26 @@ pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiv
 
     // notify-debouncer-mini debounce window size: 1000ms
     let (tx, rx) = mpsc::channel();
-    let mut debouncer = new_debouncer(Duration::from_millis(1000), tx)?;
-    debouncer.watcher().watch(&source_path, notify::RecursiveMode::Recursive)?;
+    let mut debouncer = new_debouncer(Duration::from_millis(1000), None, tx)?;
+    debouncer.watch(&source_path, notify::RecursiveMode::Recursive)?;
 
     loop {
         if shutdown_rx.try_recv().is_ok() {
             break;
         }
-        match rx.recv_timeout(Duration::from_millis(200)) {
+        match rx.try_recv() {
             Ok(res) => match res {
-                // FIXME: big problem -> keeping reload SITE
                 Ok(events) => {
                     let interesting = events.iter().any(|e| {
-                        is_source_file(&e.path)
+                        let event = &e.event;
+                        match event.kind {
+                            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {},
+                            _ => return false
+                        };
+                        event.paths.iter().any(|p| {
+                            is_source_file(&p)
+                        })
                     });
-                    dbg!(events);
 
                     if interesting {
                         let _ = tokio::task::spawn_blocking(|| {
@@ -266,15 +278,14 @@ pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiv
                         println!("Site global info reloaded.");
                     }
                 }
-                Err(e) => eprintln!("watch error: {:?}", e),
+                Err(e) => println!("Config file watch error: {:?}", e),
             },
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // idle wait
-                tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+            Err(mpsc::TryRecvError::Empty) => {
+                // idle, sleep for 250ms
+                tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
             }
-            Err(e) => {
-                eprintln!("channel error: {:?}", e);
-                break;
+            Err(_) => {
+                return Err("Failed to receive source file change event.".into());
             }
         }
     }
