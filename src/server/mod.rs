@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::{file::{parse_file, Metadata}, result_matcher};
 
 pub mod run;
+pub mod helper;
 
 /// Configuration structure for the application.
 #[derive(Debug, Deserialize, Serialize)]
@@ -156,7 +157,7 @@ pub(crate) struct ClassMap {
 
 impl ClassMap {
     pub fn new(name: String) -> Self {
-        ClassMap { name: name.clone(), path: format!("/{}", name), posts: vec![] }
+        ClassMap { name: name, path: String::new(), posts: vec![] }
     }
 }
 
@@ -194,6 +195,24 @@ pub(crate) fn get_site() -> Site {
                                 map.posts.push(metadata.clone());
                             } else {
                                 let mut new_map = ClassMap::new(c.clone());
+                                new_map.path = format!(
+                                    "{}{}",
+                                    {
+                                        let config = CONFIG.load();
+                                        let base_url = &config.site.url;
+                                        base_url.to_string()
+                                    },
+                                    {
+                                        let config = CONFIG.load();
+                                        let menu = config.site.menu.iter().find(|&menu| {
+                                            menu.name.eq(c)
+                                        });
+                                        match menu {
+                                            Some(m) => m.link.to_string(),
+                                            _ => "".to_string()
+                                        }
+                                    }
+                                );
                                 new_map.posts.push(metadata.clone());
                                 site.categories.insert(c.to_string(), new_map);
                             }
