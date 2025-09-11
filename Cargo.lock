@@ -2073,6 +2073,7 @@ dependencies = [
  "notify-debouncer-full",
  "serde",
  "serde_yaml",
+ "sha2",
  "tera",
  "tokio",
  "toml 0.9.5",

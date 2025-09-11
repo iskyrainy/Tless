@@ -49,17 +49,3 @@ macro_rules! result_matcher {
         }
     };
 }
-
-#[macro_export]
-macro_rules! define_tag_helper {
-    ($name:ident, $tag:expr, $path_attr:expr, { $($k:expr => $v:expr),* }) => {
-        #[derive(Clone)]
-        struct $name;
-        impl tera::Function for $name {
-            fn call(&self, args: &HashMap<String, tera::Value>) -> tera::Result<tera::Value> {
-                let helper = make_tag_helper($tag, $path_attr, &[ $(($k, $v)),* ]);
-                helper.call(args)
-            }
-        }
-    };
-}
