@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
-use tera::{to_value, Function, Tera, Value, Result};
+use tera::{Function, Result, Tera, Value, to_value};
 
 use crate::server::CONFIG;
 
@@ -45,6 +45,7 @@ impl Helpers {
         helper.register("image", ImageHelper);
         helper.register("favicon", FaviconHelper);
         helper.register("feed", FeedHelper);
+        helper.register("meta", MetaHelper);
         helper
     }
 
@@ -71,14 +72,22 @@ struct DateHelper;
 impl Function for DateHelper {
     fn call(&self, args: &HashMap<String, Value>) -> tera::Result<Value> {
         let ts = args
-            .get("ts")
-            .and_then(|v| v.as_i64())
-            .unwrap_or_else(|| Utc::now().timestamp());
+            .get("ts");
+        let ts = match ts {
+            Some(ts) => match ts {
+                Value::Number(n) => n.as_i64().unwrap_or(Utc::now().timestamp()),
+                Value::String(s) => DateTime::parse_from_rfc3339(s.as_str())
+                    .unwrap_or(Utc::now().into())
+                    .timestamp(),
+                _ => return Err(tera::Error::msg("Missing 'path'"))
+            },
+            None => Utc::now().timestamp()
+        };
 
         let fmt = args
             .get("fmt")
             .and_then(|v| v.as_str())
-            .unwrap_or("%Y-%m-%d");
+            .unwrap_or("%Y-%m-%d %H:%M:%S");
 
         let date = DateTime::from_timestamp(ts, 0).unwrap_or_else(|| Utc::now());
         Ok(to_value(date.format(fmt).to_string())?)
@@ -177,6 +186,7 @@ define_tag_helper!(ImageHelper, "img", "src", {});
 define_tag_helper!(MailHelper, "a", "href", {});
 define_tag_helper!(FaviconHelper, "link", "href", { "rel" => "icon" });
 define_tag_helper!(FeedHelper, "link", "href", { "rel" => "alternate", "type" => "application/rss+xml" });
+define_tag_helper!(MetaHelper, "meta", "content", { "name" => "generator" });
 
 fn extract_root_path(url: &str) -> String {
     if let Some(pos) = url.find("://") {
