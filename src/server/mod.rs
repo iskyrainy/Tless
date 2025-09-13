@@ -167,6 +167,18 @@ pub(crate) fn get_source_path() -> PathBuf {
     current_dir.join("source")
 }
 
+pub(crate) fn extract_root_path(url: &str) -> String {
+    if url.is_empty() {
+        return "".to_string();
+    }
+    if let Some(pos) = url.find("://") {
+        if let Some(path_pos) = url[pos + 3..].find('/') {
+            return url[pos + 3 + path_pos..].to_string();
+        }
+    }
+    url.to_string()
+}
+
 /// Load files' [Metadata] of `./source` into `SITE`.
 pub(crate) fn get_site() -> Site {
     let source_dir = get_source_path();
@@ -178,14 +190,7 @@ pub(crate) fn get_site() -> Site {
         let config = CONFIG.load();
         format!(
             "{}/{}/{}",
-            {
-                let base_url = config.site.url.to_string();
-                if base_url == "/" {
-                    "".to_string()
-                } else {
-                    base_url
-                }
-            },
+            extract_root_path(config.site.url.as_str()),
             t,
             c
         )

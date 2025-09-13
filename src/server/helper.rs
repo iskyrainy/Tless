@@ -1,9 +1,9 @@
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 use chrono::{DateTime, Utc};
-use tera::{Function, Result, Tera, Value, to_value};
+use tera::{to_value, Function, Map, Number, Result, Tera, Value};
 
-use crate::server::CONFIG;
+use crate::server::{CONFIG, SITE};
 
 pub trait CloneableFunction: Function + Send + Sync {
     fn clone_box(&self) -> Box<dyn CloneableFunction>;
@@ -46,6 +46,11 @@ impl Helpers {
         helper.register("favicon", FaviconHelper);
         helper.register("feed", FeedHelper);
         helper.register("meta", MetaHelper);
+        helper.register("partial", PartialHelper);
+        helper.register("list_categories", CategoriesHelper);
+        helper.register("list_tags", TagsHelper);
+        helper.register("list_posts", PostsHelper);
+        helper.register("list_pages", PagesHelper);
         helper
     }
 
@@ -62,6 +67,48 @@ impl Helpers {
             tera.register_function(name, move |args: &HashMap<String, Value>| {
                 f_clone.call(args)
             });
+        }
+    }
+}
+
+macro_rules! match_value_or_default {
+    ($name:expr, $pat:pat => $val:ident, $default_value:expr) => {
+        match $name {
+            Some(arg) => {
+                match arg {
+                    $pat => $val,
+                    _ => $default_value
+                }
+            },
+            None => $default_value
+        }
+    };
+    ($name:expr, $pat:pat => $val:ident, $default_value:expr, $and_then:expr) => {
+        match $name {
+            Some(arg) => {
+                match arg {
+                    $pat => $and_then($val),
+                    _ => $default_value
+                }
+            },
+            None => $default_value
+        }
+    };
+    ($name:expr, $pat:pat => $val:ident) => {
+        match $name {
+            Some(arg) => {
+                match arg {
+                    $pat => $val,
+                    _ => return Err(tera::Error::msg(format!(
+                        "Param type error: expect pattern `{}` but got value `{:?}`",
+                        stringify!($pat), arg
+                    )))
+                }
+            },
+            None => return Err(tera::Error::msg(format!(
+                "Param not found: `{}`",
+                stringify!($name)
+            )))
         }
     }
 }
@@ -84,18 +131,14 @@ impl Function for DateHelper {
             None => Utc::now().timestamp()
         };
 
-        let fmt = args
-            .get("fmt")
-            .and_then(|v| v.as_str())
-            .unwrap_or("%Y-%m-%d %H:%M:%S");
-
+        let fmt = match_value_or_default!(args.get("fmt"), Value::String(v) => v, &String::from("%Y-%m-%d %H:%M:%S"));
         let date = DateTime::from_timestamp(ts, 0).unwrap_or_else(|| Utc::now());
         Ok(to_value(date.format(fmt).to_string())?)
     }
 }
 
 #[derive(Clone)]
-pub struct TagHelper {
+struct TagHelper {
     pub tag: String,
     pub default_attrs: HashMap<String, String>,
     pub path_attr: String,
@@ -154,7 +197,7 @@ impl Function for TagHelper {
     }
 }
 
-pub fn make_tag_helper(tag: &str, path_attr: &str, defaults: &[(&str, &str)]) -> TagHelper {
+fn make_tag_helper(tag: &str, path_attr: &str, defaults: &[(&str, &str)]) -> TagHelper {
     TagHelper {
         tag: tag.to_string(),
         path_attr: path_attr.to_string(),
@@ -165,7 +208,6 @@ pub fn make_tag_helper(tag: &str, path_attr: &str, defaults: &[(&str, &str)]) ->
     }
 }
 
-#[macro_export]
 macro_rules! define_tag_helper {
     ($name:ident, $tag:expr, $path_attr:expr, { $($k:expr => $v:expr),* }) => {
         #[derive(Clone)]
@@ -188,15 +230,6 @@ define_tag_helper!(FaviconHelper, "link", "href", { "rel" => "icon" });
 define_tag_helper!(FeedHelper, "link", "href", { "rel" => "alternate", "type" => "application/rss+xml" });
 define_tag_helper!(MetaHelper, "meta", "content", { "name" => "generator" });
 
-fn extract_root_path(url: &str) -> String {
-    if let Some(pos) = url.find("://") {
-        if let Some(path_pos) = url[pos + 3..].find('/') {
-            return url[pos + 3 + path_pos..].to_string();
-        }
-    }
-    "".to_string()
-}
-
 #[macro_export]
 macro_rules! define_url_helper {
     // Only root
@@ -206,18 +239,10 @@ macro_rules! define_url_helper {
         impl Function for $name {
             fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
                 let site_url = &CONFIG.load().site.url;
-                let root = extract_root_path(site_url);
-
-                let path = args.get("path")
-                    .ok_or_else(|| tera::Error::msg("Missing 'path'"))?
-                    .as_str()
-                    .ok_or_else(|| tera::Error::msg("'path' must be a string"))?;
-
-                let relative = args.get("relative")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
-
-                let res = if relative {
+                let root = super::extract_root_path(site_url);
+                let path = match_value_or_default!(args.get("path"), Value::String(v) => v);
+                let relative = match_value_or_default!(args.get("relative"), Value::Bool(v) => v, &true);
+                let res = if *relative {
                     if path.starts_with('/') {
                         format!(".{}", path)
                     } else {
@@ -242,12 +267,7 @@ macro_rules! define_url_helper {
         impl Function for $name {
             fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
                 let site_url = &CONFIG.load().site.url;
-
-                let path = args.get("path")
-                    .ok_or_else(|| tera::Error::msg("Missing 'path'"))?
-                    .as_str()
-                    .ok_or_else(|| tera::Error::msg("'path' must be a string"))?;
-
+                let path = match_value_or_default!(args.get("path"), Value::String(v) => v);
                 let res = if path.starts_with('/') {
                     format!("{}{}", site_url.trim_end_matches('/'), path)
                 } else {
@@ -264,11 +284,7 @@ macro_rules! define_url_helper {
         struct $name;
         impl Function for $name {
             fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
-                let mail = args.get("mail")
-                    .ok_or_else(|| tera::Error::msg("Missing 'mail'"))?
-                    .as_str()
-                    .ok_or_else(|| tera::Error::msg("'mail' must be a string"))?;
-
+                let mail = match_value_or_default!(args.get("mail"), Value::String(v) => v);
                 let mut hashed_email = Sha256::new();
                 hashed_email.update(mail.trim());
                 let url = format!("https://www.gravatar.com/avatar/{:X}", hashed_email.finalize());
@@ -281,3 +297,143 @@ macro_rules! define_url_helper {
 define_url_helper!(UrlHelper, url);
 define_url_helper!(FullUrlHelper, fullurl);
 define_url_helper!(GravatarHelper, gravatar);
+
+#[derive(Clone)]
+struct PartialHelper;
+
+impl Function for PartialHelper {
+    fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
+        // TODO: render other layout which in layout dir
+        Ok(Value::Null)
+    }
+}
+
+#[derive(Clone)]
+struct ListHelper {
+    pub list: String
+}
+
+impl Function for ListHelper {
+    fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
+        let orderby = match_value_or_default!(args.get("orderby"), Value::String(v) => v, &String::from("name"));
+        let order = match_value_or_default!(args.get("order"), Value::Number(v) => v, 1, |v: &Number| v.as_i64().unwrap_or(1));
+        let show_count = match_value_or_default!(args.get("show_count"), Value::Bool(v) => v, &true);
+        let list = match_value_or_default!(args.get("list"), Value::Bool(v) => v, &true);
+        let separator = match_value_or_default!(args.get("separator"), Value::String(v) => v, &String::from(","));
+        let amount = match_value_or_default!(args.get("amount"), Value::Number(v) => v, 1 << 16, |v: &Number| v.as_i64().unwrap_or(1 << 16));
+        let tag_class = match_value_or_default!(args.get("tag_class"), Value::Object(v) => v, &Map::new());
+        let tag_class_ul = match_value_or_default!(tag_class.get("ul"), Value::String(v) => v, &String::from("ul"));
+        let tag_class_li = match_value_or_default!(tag_class.get("li"), Value::String(v) => v, &String::from("li"));
+        let tag_class_a = match_value_or_default!(tag_class.get("a"), Value::String(v) => v, &String::from("a"));
+        let tag_class_count = match_value_or_default!(tag_class.get("count"), Value::String(v) => v, &String::from("count"));
+
+        let mut res = String::new();
+        let site = &SITE.load();
+
+        let render_list = |res: &mut String, iter: Vec<(String, String, usize)>| {
+            res.push_str(&format!(r#"<ul class="{}" itemprop="keywords">"#, tag_class_ul));
+            for (i, (name, href, count)) in iter.into_iter().enumerate() {
+                if i >= amount as usize {
+                    break;
+                }
+                res.push_str(&format!(r#"<li class="{}">"#, tag_class_li));
+                res.push_str(&format!(r#"<a class="{}" href="{}">{}</a>"#, tag_class_a, href, name));
+                if *show_count && count > 0 {
+                    res.push_str(&format!(r#"<span class="{}">{}</span>"#, tag_class_count, count));
+                }
+                res.push_str("</li>");
+            }
+            res.push_str("</ul>");
+        };
+
+        let render_inline = |res: &mut String, iter: Vec<(String, String, usize)>| {
+            for (i, (name, href, count)) in iter.into_iter().enumerate() {
+                if i >= amount as usize {
+                    break;
+                }
+                res.push_str(&format!(r#"<a class="{}" href="{}">{}"#, tag_class_a, href, name));
+                if *show_count && count > 0 {
+                    res.push_str(&format!(r#"<span class="{}">{}</span>"#, tag_class_count, count));
+                }
+                res.push_str(&format!("</a>{}", separator));
+            }
+        };
+
+        match self.list.as_str() {
+            "categorie" | "tag" => {
+                let data = if self.list == "categorie" {
+                    site.categories.iter()
+                } else {
+                    site.tags.iter()
+                };
+                let mut tmp: Vec<_> = data.map(|(k, v)| (k.clone(), v.path.clone(), v.posts.len())).collect();
+                match orderby.as_str() {
+                    "name" => {
+                        if order == -1 {
+                            tmp.sort_by(|x, y| y.0.cmp(&x.0));
+                        } else {
+                            tmp.sort_by(|x, y| x.0.cmp(&y.0));
+                        }
+                    }
+                    "count" => {
+                        if order == -1 {
+                            tmp.sort_by(|x, y| y.2.cmp(&x.2));
+                        } else {
+                            tmp.sort_by(|x, y| x.2.cmp(&y.2));
+                        }
+                    }
+                    _ => {}
+                }
+
+                if *list {
+                    render_list(&mut res, tmp);
+                } else {
+                    render_inline(&mut res, tmp);
+                }
+            },
+            "post" | "page" => {
+                let mut tmp = if self.list == "post" {
+                    site.posts.clone()
+                } else {
+                    site.pages.clone()
+                };
+                tmp.sort_by(|x, y| {
+                    let x_date = DateTime::from_str(&x.date).unwrap_or(Utc::now());
+                    let y_date = DateTime::from_str(&y.date).unwrap_or(Utc::now());
+                    if order == -1 { y_date.cmp(&x_date) } else { x_date.cmp(&y_date) }
+                });
+                let mapped: Vec<_> = tmp.into_iter().map(|p| (p.title.clone(), p.title, 0)).collect();
+
+                if *list {
+                    render_list(&mut res, mapped);
+                } else {
+                    render_inline(&mut res, mapped);
+                }
+            },
+            _ => {}
+        }
+        Ok(Value::String(res))
+    }
+}
+
+fn make_list_helper(list: &str) -> ListHelper {
+    ListHelper { list: list.to_string() }
+}
+
+macro_rules! define_list_helper {
+    ($name:ident, $list:expr) => {
+        #[derive(Clone)]
+        struct $name;
+        impl Function for $name {
+            fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
+                let helper = make_list_helper($list);
+                helper.call(args)
+            }
+        }
+    };
+}
+
+define_list_helper!(CategoriesHelper, "categorie");
+define_list_helper!(TagsHelper, "tag");
+define_list_helper!(PostsHelper, "post");
+define_list_helper!(PagesHelper, "page");
