@@ -72,6 +72,23 @@ impl Helpers {
 }
 
 macro_rules! match_value_or_default {
+    ($name:expr, $pat:pat => $val:ident) => {
+        match $name {
+            Some(arg) => {
+                match arg {
+                    $pat => $val,
+                    _ => return Err(tera::Error::msg(format!(
+                        "Param type error: expect pattern `{}` but got value `{:?}`",
+                        stringify!($pat), arg
+                    )))
+                }
+            },
+            None => return Err(tera::Error::msg(format!(
+                "Param not found: `{}`",
+                stringify!($name)
+            )))
+        }
+    };
     ($name:expr, $pat:pat => $val:ident, $default_value:expr) => {
         match $name {
             Some(arg) => {
@@ -94,23 +111,6 @@ macro_rules! match_value_or_default {
             None => $default_value
         }
     };
-    ($name:expr, $pat:pat => $val:ident) => {
-        match $name {
-            Some(arg) => {
-                match arg {
-                    $pat => $val,
-                    _ => return Err(tera::Error::msg(format!(
-                        "Param type error: expect pattern `{}` but got value `{:?}`",
-                        stringify!($pat), arg
-                    )))
-                }
-            },
-            None => return Err(tera::Error::msg(format!(
-                "Param not found: `{}`",
-                stringify!($name)
-            )))
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -437,3 +437,5 @@ define_list_helper!(CategoriesHelper, "categorie");
 define_list_helper!(TagsHelper, "tag");
 define_list_helper!(PostsHelper, "post");
 define_list_helper!(PagesHelper, "page");
+
+// TODO: helper -> paginator, number_format, open_graph, toc

@@ -9,6 +9,7 @@ use crate::{file::{parse_file, Metadata}, result_matcher};
 
 pub mod run;
 pub mod helper;
+pub mod render;
 
 /// Configuration structure for the application.
 #[derive(Debug, Deserialize, Serialize)]
@@ -264,6 +265,7 @@ fn is_source_file(path: &path::Path) -> bool {
     }
 }
 
+// TODO: thread safty when reloading
 pub(crate) static SITE: LazyLock<ArcSwap<Site>> = LazyLock::new(|| {
     let site = get_site();
     ArcSwap::from_pointee(site)

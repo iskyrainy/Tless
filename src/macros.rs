@@ -12,6 +12,21 @@
 /// ```
 #[macro_export]
 macro_rules! result_matcher {
+    ($result:expr, err_handler = $err_handler:expr) => {
+        match $result {
+            Err(err) => $err_handler(err),
+            Ok(suc) => suc
+        }
+    };
+    ($result:expr, err_handler = $err_handler:expr, ok_handler = $ok_handler:expr) => {
+        match $result {
+            Err(err) => $err_handler(err),
+            Ok(mut suc) => {
+                $ok_handler(&mut suc);
+                return suc;
+            },
+        }
+    };
     ($result:expr, $err_msg:expr) => {
         match $result {
             Err(err) => {
@@ -31,21 +46,6 @@ macro_rules! result_matcher {
                 println!("{}", $suc_msg);
                 return suc;
             }
-        }
-    };
-    ($result:expr, err_handler = $err_handler:expr) => {
-        match $result {
-            Err(err) => $err_handler(err),
-            Ok(suc) => suc
-        }
-    };
-    ($result:expr, err_handler = $err_handler:expr, ok_handler = $ok_handler:expr) => {
-        match $result {
-            Err(err) => $err_handler(err),
-            Ok(ok) => {
-                $ok_handler(ok);
-                return suc;
-            },
         }
     };
 }
