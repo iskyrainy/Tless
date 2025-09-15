@@ -312,18 +312,22 @@ pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiv
     Ok(())
 }
 
-pub(crate) static TERA: LazyLock<ArcSwap<Tera>> = LazyLock::new(|| {
-    let layout_dir = env::current_dir().map(|p| {
+pub(crate) fn get_layout_path() -> PathBuf {
+    env::current_dir().map(|p| {
         let dir = p.join("theme").join(&CONFIG.load().site.theme);
         if dir.exists() {
-            dir.to_string_lossy().to_string()
+            dir
         } else {
             println!("Failed to init Tera");
             std::process::exit(1)
         }
-    }).unwrap();
+    }).unwrap()
+}
+
+pub(crate) static TERA: LazyLock<ArcSwap<Tera>> = LazyLock::new(|| {
+    let layout_dir = get_layout_path();
     let tera = result_matcher!(
-        Tera::new(&format!("{}/layout/*.html", layout_dir)),
+        Tera::new(&format!("{}/layout/*.html", layout_dir.to_string_lossy().to_string())),
         err_handler = |e| {
             println!("Parsing error(s): {}", e);
             std::process::exit(1)
@@ -335,13 +339,8 @@ pub(crate) static TERA: LazyLock<ArcSwap<Tera>> = LazyLock::new(|| {
     ArcSwap::from_pointee(tera)
 });
 
-pub(crate) fn get_theme_path() -> PathBuf {
-    let current_dir = env::current_dir().unwrap();
-    current_dir.join("theme")
-}
-
-pub(crate) async fn watch_theme(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> Result<(), Box<dyn Error>> {
-    let theme_path = get_theme_path();
+pub(crate) async fn watch_layout(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> Result<(), Box<dyn Error>> {
+    let theme_path = get_layout_path();
 
     // notify-debouncer-mini debounce window size: 1000ms
     let (tx, rx) = mpsc::channel();
@@ -373,14 +372,14 @@ pub(crate) async fn watch_theme(mut shutdown_rx: tokio::sync::broadcast::Receive
                         println!("TERA reloaded.");
                     }
                 }
-                Err(e) => println!("Theme template file watch error: {:?}", e),
+                Err(e) => println!("Layout template file watch error: {:?}", e),
             },
             Err(mpsc::TryRecvError::Empty) => {
                 // idle, sleep for 250ms
                 tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
             }
             Err(_) => {
-                return Err("Failed to receive theme file change event.".into());
+                return Err("Failed to receive layout file change event.".into());
             }
         }
     }
@@ -400,6 +399,6 @@ pub(crate) fn start_watch(shutdown_tx: tokio::sync::broadcast::Sender<()>) {
         result_matcher!(watch_source(clone.subscribe()).await, "Failed to watch source dir");
     });
     tokio::spawn(async move {
-        result_matcher!(watch_theme(shutdown_tx.subscribe()).await, "Failed to watch theme dir");
+        result_matcher!(watch_layout(shutdown_tx.subscribe()).await, "Failed to watch layout dir");
     });
 }
