@@ -3,10 +3,10 @@ use std::{fs::File, io::{BufWriter, Write}};
 use pulldown_cmark::{html, Options, Parser};
 
 
-static default_options: Options = Options::all();
+static DEFAULT_OPTIONS: Options = Options::all();
 
 pub(crate) fn render(markdown: &String) -> String {
-    let parser = Parser::new_ext(markdown, default_options);
+    let parser = Parser::new_ext(markdown, DEFAULT_OPTIONS);
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
     html_output
@@ -22,7 +22,7 @@ impl<'a, W: Write> std::fmt::Write for IoWriteAdapter<'a, W> {
 }
 
 pub(crate) fn render_to_file(md: &str, path: &str) -> std::io::Result<()> {
-    let parser = Parser::new_ext(md, Options::all());
+    let parser = Parser::new_ext(md, DEFAULT_OPTIONS);
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
     let mut adapter = IoWriteAdapter(&mut writer);

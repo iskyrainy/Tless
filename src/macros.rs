@@ -23,7 +23,7 @@ macro_rules! result_matcher {
             Err(err) => $err_handler(err),
             Ok(mut suc) => {
                 $ok_handler(&mut suc);
-                return suc;
+                suc
             },
         }
     };
@@ -44,7 +44,7 @@ macro_rules! result_matcher {
             }
             Ok(suc) => {
                 println!("{}", $suc_msg);
-                return suc;
+                suc
             }
         }
     };

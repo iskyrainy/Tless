@@ -1,17 +1,14 @@
-use std::{env, sync::LazyLock};
-
 use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
-use tera::Tera;
+use tera::Context;
 
-use crate::{result_matcher, server::{self, helper, render, CONFIG, SITE}};
+use crate::server::{self, render, SITE, TERA};
 
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 pub async fn run(port: u16) -> std::io::Result<()> {
     // Start watching file change
     let (shutdown_tx, _) = tokio::sync::broadcast::channel(1);
-    server::start_watch_config(shutdown_tx.clone());
-    server::start_watch_source(shutdown_tx.clone());
+    server::start_watch(shutdown_tx.clone());
 
     // Initialize the server
     let server = init_server(port, shutdown_tx)?;
@@ -38,29 +35,6 @@ fn init_server(port: u16, shutdown_tx: tokio::sync::broadcast::Sender<()>) -> Re
     Ok(server)
 }
 
-static TERA: LazyLock<Tera> = LazyLock::new(|| {
-    let layout_dir = env::current_dir().map(|p| {
-        let dir = p.join("theme").join(&CONFIG.load().site.theme);
-        if dir.exists() {
-            dir.to_string_lossy().to_string()
-        } else {
-            println!("Failed to init Tera");
-            std::process::exit(1)
-        }
-    }).unwrap();
-    let tera = result_matcher!(
-        Tera::new(&format!("{}/layout/*.html", layout_dir)),
-        err_handler = |e| {
-            println!("Parsing error(s): {}", e);
-            std::process::exit(1)
-        },
-        ok_handler = |tera| {
-            helper::Helpers::new().apply_to(tera);
-        }
-    );
-    tera
-});
-
 #[get("/")]
 async fn hello() -> impl Responder {
     HttpResponse::Ok().body("Hello world!")
@@ -71,5 +45,7 @@ async fn get_item(path: web::Path<String>) -> impl Responder {
     let page_name = path.into_inner();
     let site = &SITE.load();
     let res = render::render(&site.posts.iter().find(|p| p.title.eq(&page_name)).unwrap().content);
-    HttpResponse::Ok().body(res)
+    let mut context = Context::new();
+    context.insert("content", &res);
+    HttpResponse::Ok().body(TERA.load().render("index.html", &context).unwrap())
 }

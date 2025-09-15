@@ -4,6 +4,7 @@ use arc_swap::ArcSwap;
 use notify::EventKind;
 use notify_debouncer_full::new_debouncer;
 use serde::{Deserialize, Serialize};
+use tera::Tera;
 
 use crate::{file::{parse_file, Metadata}, result_matcher};
 
@@ -113,15 +114,6 @@ pub(crate) async fn watch_config(mut shutdown_rx: tokio::sync::broadcast::Receiv
         }
     }
     Ok(())
-}
-
-/// Start watching the `tless.toml`.
-/// # Arguments
-/// * `shutdown_tx` - Subscribe the sender to recv a shutdown signal.
-pub(crate) fn start_watch_config(shutdown_tx: tokio::sync::broadcast::Sender<()>) {
-    tokio::spawn(async move {
-        result_matcher!(watch_config(shutdown_tx.subscribe()).await, "Failed to watch configuration file");
-    });
 }
 
 /// Struct of global source info, including `post`, `page`.
@@ -265,13 +257,13 @@ fn is_source_file(path: &path::Path) -> bool {
     }
 }
 
-// TODO: thread safty when reloading
 pub(crate) static SITE: LazyLock<ArcSwap<Site>> = LazyLock::new(|| {
     let site = get_site();
+    // TODO: render mds to files
     ArcSwap::from_pointee(site)
 });
 
-pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,) -> Result<(), Box<dyn Error>> {
+pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> Result<(), Box<dyn Error>> {
     let source_path = get_source_path();
 
     // notify-debouncer-mini debounce window size: 1000ms
@@ -286,6 +278,7 @@ pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiv
         match rx.try_recv() {
             Ok(res) => match res {
                 Ok(events) => {
+                    // TODO: render changed md to file
                     let interesting = events.iter().any(|e| {
                         let event = &e.event;
                         match event.kind {
@@ -319,11 +312,94 @@ pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiv
     Ok(())
 }
 
-/// Start watching the source dir.
+pub(crate) static TERA: LazyLock<ArcSwap<Tera>> = LazyLock::new(|| {
+    let layout_dir = env::current_dir().map(|p| {
+        let dir = p.join("theme").join(&CONFIG.load().site.theme);
+        if dir.exists() {
+            dir.to_string_lossy().to_string()
+        } else {
+            println!("Failed to init Tera");
+            std::process::exit(1)
+        }
+    }).unwrap();
+    let tera = result_matcher!(
+        Tera::new(&format!("{}/layout/*.html", layout_dir)),
+        err_handler = |e| {
+            println!("Parsing error(s): {}", e);
+            std::process::exit(1)
+        },
+        ok_handler = |tera| {
+            helper::Helpers::new().apply_to(tera);
+        }
+    );
+    ArcSwap::from_pointee(tera)
+});
+
+pub(crate) fn get_theme_path() -> PathBuf {
+    let current_dir = env::current_dir().unwrap();
+    current_dir.join("theme")
+}
+
+pub(crate) async fn watch_theme(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> Result<(), Box<dyn Error>> {
+    let theme_path = get_theme_path();
+
+    // notify-debouncer-mini debounce window size: 1000ms
+    let (tx, rx) = mpsc::channel();
+    let mut debouncer = new_debouncer(Duration::from_millis(1000), None, tx)?;
+    debouncer.watch(&theme_path, notify::RecursiveMode::Recursive)?;
+
+    loop {
+        if shutdown_rx.try_recv().is_ok() {
+            break;
+        }
+        match rx.try_recv() {
+            Ok(res) => match res {
+                Ok(events) => {
+                    let interesting = events.iter().any(|e| {
+                        let event = &e.event;
+                        match event.kind {
+                            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => true,
+                            _ => false
+                        }
+                    });
+
+                    if interesting {
+                        let _ = tokio::task::spawn_blocking(|| {
+                            let tera = TERA.load();
+                            let mut clone = tera.as_ref().clone();
+                            result_matcher!(clone.full_reload(), "Failed to reload templates");
+                            TERA.store(Arc::new(clone));
+                        }).await;
+                        println!("TERA reloaded.");
+                    }
+                }
+                Err(e) => println!("Theme template file watch error: {:?}", e),
+            },
+            Err(mpsc::TryRecvError::Empty) => {
+                // idle, sleep for 250ms
+                tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+            }
+            Err(_) => {
+                return Err("Failed to receive theme file change event.".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Start watching.
 /// # Arguments
 /// * `shutdown_tx` - Subscribe the sender to recv a shutdown signal.
-pub(crate) fn start_watch_source(shutdown_tx: tokio::sync::broadcast::Sender<()>) {
+pub(crate) fn start_watch(shutdown_tx: tokio::sync::broadcast::Sender<()>) {
+    let clone = shutdown_tx.clone();
     tokio::spawn(async move {
-        result_matcher!(watch_source(shutdown_tx.subscribe()).await, "Failed to watch source dir");
+        result_matcher!(watch_config(clone.subscribe()).await, "Failed to watch configuration file");
+    });
+    let clone = shutdown_tx.clone();
+    tokio::spawn(async move {
+        result_matcher!(watch_source(clone.subscribe()).await, "Failed to watch source dir");
+    });
+    tokio::spawn(async move {
+        result_matcher!(watch_theme(shutdown_tx.subscribe()).await, "Failed to watch theme dir");
     });
 }
