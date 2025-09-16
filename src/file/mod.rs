@@ -24,6 +24,7 @@ pub struct Metadata {
     pub tags: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
     pub prva: bool,
+    // TODO: with path replace content, reduce main mermory usage
     pub content: String
 }
 
