@@ -2,6 +2,8 @@ use std::{fs::File, io::{BufWriter, Write}};
 
 use pulldown_cmark::{html, Options, Parser};
 
+use crate::server::SITE;
+
 
 static DEFAULT_OPTIONS: Options = Options::all();
 
@@ -28,4 +30,11 @@ pub(crate) fn render_to_file(md: &str, path: &str) -> std::io::Result<()> {
     let mut adapter = IoWriteAdapter(&mut writer);
     html::write_html_fmt(&mut adapter, parser).unwrap();
     Ok(())
+}
+
+pub(crate) fn render_all() {
+    let site = &SITE.load();
+    site.posts.iter().for_each(|post| {
+        
+    });
 }
