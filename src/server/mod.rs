@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, error::Error, fs, path::{self, PathBuf}, sync::{Arc, LazyLock, mpsc}, time::Duration};
+use std::{collections::HashMap, env, error::Error, fs, path::{self, PathBuf}, sync::{mpsc, Arc, LazyLock}, time::Duration};
 
 use arc_swap::ArcSwap;
 use notify::EventKind;
@@ -11,6 +11,8 @@ use crate::{file::{parse_file, Metadata}, result_matcher};
 pub mod run;
 pub mod helper;
 pub mod render;
+
+pub(crate) static BASE_DIR: LazyLock<PathBuf> = LazyLock::new(|| env::current_dir().unwrap());
 
 /// Configuration structure for the application.
 #[derive(Debug, Deserialize, Serialize)]
@@ -43,8 +45,7 @@ pub(crate) struct Menu {
 
 /// Get the path to the configuration file (`tless.toml`) in the current directory.
 pub(crate) fn get_config_path() -> PathBuf {
-    let current_dir = env::current_dir().unwrap();
-    current_dir.join("tless.toml")
+    BASE_DIR.join("tless.toml")
 }
 
 /// Load `tless.toml` to `CONFIG`.
@@ -156,8 +157,7 @@ impl ClassMap {
 
 /// Get the path to the source dir (`./source`) in the current directory.
 pub(crate) fn get_source_path() -> PathBuf {
-    let current_dir = env::current_dir().unwrap();
-    current_dir.join("source")
+    BASE_DIR.join("source")
 }
 
 pub(crate) fn extract_root_path(url: &str) -> String {
@@ -251,7 +251,7 @@ fn is_source_file(path: &path::Path) -> bool {
         }
     }
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-        matches!(ext, "md" | "markdown" | "toml") && !path.to_str().unwrap_or_default().contains("/draft/")
+        matches!(ext, "md" | "markdown" | "toml" | "html") && !path.to_str().unwrap_or_default().contains("/draft/")
     } else {
         false
     }
@@ -319,15 +319,13 @@ pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiv
 }
 
 pub(crate) fn get_layout_path() -> PathBuf {
-    env::current_dir().map(|p| {
-        let dir = p.join("theme").join(&CONFIG.load().site.theme);
-        if dir.exists() {
-            dir
-        } else {
-            println!("Failed to init Tera");
-            std::process::exit(1)
-        }
-    }).unwrap()
+    let dir = BASE_DIR.join("theme").join(&CONFIG.load().site.theme);
+    if dir.exists() {
+        dir
+    } else {
+        println!("Failed to init Tera");
+        std::process::exit(1)
+    }
 }
 
 pub(crate) static TERA: LazyLock<ArcSwap<Tera>> = LazyLock::new(|| {
@@ -363,9 +361,12 @@ pub(crate) async fn watch_layout(mut shutdown_rx: tokio::sync::broadcast::Receiv
                     let interesting = events.iter().any(|e| {
                         let event = &e.event;
                         match event.kind {
-                            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => true,
-                            _ => false
-                        }
+                            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {},
+                            _ => return false
+                        };
+                        event.paths.iter().any(|p| {
+                            is_source_file(&p)
+                        })
                     });
 
                     if interesting {
@@ -374,6 +375,9 @@ pub(crate) async fn watch_layout(mut shutdown_rx: tokio::sync::broadcast::Receiv
                             let mut clone = tera.as_ref().clone();
                             result_matcher!(clone.full_reload(), "Failed to reload templates");
                             TERA.store(Arc::new(clone));
+                            async {
+                                result_matcher!(render::render_all().await, "Failed to render posts");
+                            }
                         }).await;
                         println!("TERA reloaded.");
                     }
@@ -407,4 +411,8 @@ pub(crate) fn start_watch(shutdown_tx: tokio::sync::broadcast::Sender<()>) {
     tokio::spawn(async move {
         result_matcher!(watch_layout(shutdown_tx.subscribe()).await, "Failed to watch layout dir");
     });
+}
+
+pub(crate) fn get_public_path(name: &String) -> PathBuf {
+    BASE_DIR.join("public").join(name)
 }

@@ -71,7 +71,7 @@ pub(crate) async fn render_all() -> std::io::Result<()> {
     let site = SITE.load();
 
     let concurrency = num_cpus::get() + 1;
-    stream::iter(site.posts.iter())
+    stream::iter(site.posts.clone().into_iter())
         .map(|post| {
             let public_dir = public_dir.clone();
             async move {
