@@ -1,7 +1,7 @@
 use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
 use tera::Context;
 
-use crate::server::{self, render, SITE, TERA};
+use crate::{result_matcher, server::{self, render, SITE, TERA}};
 
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
@@ -9,6 +9,9 @@ pub async fn run(port: u16) -> std::io::Result<()> {
     // Start watching file change
     let (shutdown_tx, _) = tokio::sync::broadcast::channel(1);
     server::start_watch(shutdown_tx.clone());
+
+    // Render all posts
+    result_matcher!(render::render_all().await, "Failed to render posts");
 
     // Initialize the server
     let server = init_server(port, shutdown_tx)?;

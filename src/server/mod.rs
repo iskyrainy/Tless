@@ -259,7 +259,6 @@ fn is_source_file(path: &path::Path) -> bool {
 
 pub(crate) static SITE: LazyLock<ArcSwap<Site>> = LazyLock::new(|| {
     let site = get_site();
-    // TODO: render mds to files
     ArcSwap::from_pointee(site)
 });
 
@@ -278,7 +277,6 @@ pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiv
         match rx.try_recv() {
             Ok(res) => match res {
                 Ok(events) => {
-                    // TODO: render changed md to file
                     let interesting = events.iter().any(|e| {
                         let event = &e.event;
                         match event.kind {
@@ -286,7 +284,15 @@ pub(crate) async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiv
                             _ => return false
                         };
                         event.paths.iter().any(|p| {
-                            is_source_file(&p)
+                            if is_source_file(&p) {
+                                let paths = event.paths.clone();
+                                tokio::spawn(async move {
+                                    result_matcher!(render::render_to_file(paths).await, "Failed to render changed markdown to file");
+                                });
+                                true
+                            } else {
+                                false
+                            }
                         })
                     });
 
