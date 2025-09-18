@@ -3,7 +3,7 @@ use std::{collections::HashMap, str::FromStr};
 use chrono::{DateTime, Utc};
 use tera::{to_value, Function, Map, Number, Result, Tera, Value};
 
-use crate::server::{CONFIG, SITE};
+use crate::server::{CONFIG, SITE, TERA};
 
 pub trait CloneableFunction: Function + Send + Sync {
     fn clone_box(&self) -> Box<dyn CloneableFunction>;
@@ -303,8 +303,14 @@ struct PartialHelper;
 
 impl Function for PartialHelper {
     fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
-        // TODO: render other layout which in layout dir
-        Ok(Value::Null)
+        let part_name = match_value_or_default!(args.get("name"), Value::String(v) => v, &String::from(""));
+        if part_name.is_empty() {
+            return Ok(Value::Null);
+        }
+        let tera = &TERA.load();
+        let context = tera::Context::new();
+        let render_str = tera.render(format!("{}.html", part_name).as_str(), &context)?;
+        Ok(Value::String(render_str))
     }
 }
 
