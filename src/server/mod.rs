@@ -123,7 +123,7 @@ pub(crate) async fn watch_config(mut shutdown_rx: tokio::sync::broadcast::Receiv
 /// * `pages` - List of all page metadata.
 /// * `categories` - Map of all categories.
 /// * `tags` - Map of all tags.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct Site {
     pub posts: Vec<Metadata>,
     pub pages: Vec<Metadata>,
@@ -142,16 +142,15 @@ impl Site {
 /// * `name` - Class name.
 /// * `path` - Class url, normally as the `/self.name`.
 /// * `posts` - List of posts that belong to this class.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct ClassMap {
-    pub name: String,
     pub path: String,
     pub posts: Vec<Metadata>
 }
 
 impl ClassMap {
-    pub fn new(name: String) -> Self {
-        ClassMap { name: name, path: String::new(), posts: vec![] }
+    pub fn new() -> Self {
+        ClassMap { path: String::new(), posts: vec![] }
     }
 }
 
@@ -201,15 +200,14 @@ pub(crate) fn get_site() -> Site {
                     if !is_source_file(&path) {
                         continue;
                     }
-                    let file = result_matcher!(fs::File::open(&path), "Failed to open file");
-                    let metadata = result_matcher!(parse_file(file), "Failed to parse file");
+                    let metadata = result_matcher!(parse_file(PathBuf::from(&path)), "Failed to parse file");
                     site.posts.push(metadata.clone());
                     if let Some(categories) = metadata.categories.as_ref() {
                         for c in categories {
                             if let Some(map) = site.categories.get_mut(c) {
                                 map.posts.push(metadata.clone());
                             } else {
-                                let mut new_map = ClassMap::new(c.clone());
+                                let mut new_map = ClassMap::new();
                                 new_map.path = class_path(c, "categories");
                                 new_map.posts.push(metadata.clone());
                                 site.categories.insert(c.to_string(), new_map);
@@ -221,7 +219,7 @@ pub(crate) fn get_site() -> Site {
                             if let Some(map) = site.tags.get_mut(c) {
                                 map.posts.push(metadata.clone());
                             } else {
-                                let mut new_map = ClassMap::new(c.clone());
+                                let mut new_map = ClassMap::new();
                                 new_map.path = class_path(c, "tags");
                                 new_map.posts.push(metadata.clone());
                                 site.tags.insert(c.to_string(), new_map);

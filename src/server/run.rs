@@ -3,7 +3,7 @@ use std::fs;
 use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
 use tera::Context;
 
-use crate::{result_matcher, server::{self, get_public_path, render, TERA}};
+use crate::{result_matcher, server::{self, get_public_path, render, SITE, TERA}};
 
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
@@ -27,6 +27,8 @@ fn init_server(port: u16, shutdown_tx: tokio::sync::broadcast::Sender<()>) -> Re
             App::new()
                 .service(hello)
                 .service(get_archive)
+                .service(get_category)
+                .service(get_tag)
         })
         .shutdown_signal(async move {
             // Wait ctrl_c for quit gracefully
@@ -48,7 +50,12 @@ async fn hello() -> impl Responder {
 #[get("/{page}")]
 async fn get_page(page: web::Path<String>) -> impl Responder {
     let page_name = page.into_inner();
-    let context = Context::new();
+    let mut context = Context::new();
+    let site = &SITE.load();
+    context.insert("post", &site.posts);
+    context.insert("tags", &site.tags);
+    context.insert("categories", &site.categories);
+    context.insert("page", &page_name);
     match TERA.load().render(format!("{}.html", page_name).as_str(), &context) {
         Ok(res) => HttpResponse::Ok().body(res),
         Err(_) => HttpResponse::ExpectationFailed().body("Failed to render page")
@@ -64,4 +71,26 @@ async fn get_archive(post: web::Path<String>) -> impl Responder {
     HttpResponse::Ok().body(TERA.load().render("acrhive.html", &context).unwrap())
 }
 
-// TODO: tags/categories post request handler
+#[get("/categories/{category}")]
+async fn get_category(category: web::Path<String>) -> impl Responder {
+    let category_name = category.into_inner();
+    let mut context = Context::new();
+    let site = &SITE.load();
+    context.insert("post", &site.posts);
+    context.insert("tags", &site.tags);
+    context.insert("categories", &site.categories);
+    context.insert("name", &category_name);
+    HttpResponse::Ok().body(TERA.load().render("category.html", &context).unwrap())
+}
+
+#[get("/tags/{tag}")]
+async fn get_tag(tag: web::Path<String>) -> impl Responder {
+    let tag_name = tag.into_inner();
+    let mut context = Context::new();
+    let site = &SITE.load();
+    context.insert("post", &site.posts);
+    context.insert("tags", &site.tags);
+    context.insert("categories", &site.categories);
+    context.insert("name", &tag_name);
+    HttpResponse::Ok().body(TERA.load().render("category.html", &context).unwrap())
+}

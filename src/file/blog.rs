@@ -1,4 +1,4 @@
-use std::{error::Error, fs};
+use std::{error::Error, fs, path::PathBuf};
 
 use chrono::Utc;
 
@@ -87,8 +87,7 @@ pub fn publish_blog(name: &String, prva: bool) -> Result<(), Box<dyn Error>> {
     if is_file_exist(&post_path) {
         return Err("Post blog already exists.".into());
     }
-    let file = fs::File::open(&draft_path)?;
-    let metadata = parse_file(file)?;
+    let metadata = parse_file(PathBuf::from(&draft_path))?;
     // TODO: time zone support
     let frontmatter = format!(
         "---\ntitle: {}\ndate: {}\ntags: {}\ncategories: {}\nprva: {}\n---\n\n",
@@ -98,7 +97,8 @@ pub fn publish_blog(name: &String, prva: bool) -> Result<(), Box<dyn Error>> {
         format!("[{}]", metadata.categories.unwrap_or_default().join(", ")),
         prva
     );
-    let content = format!("{}{}", frontmatter, metadata.content);
+    let file_str = fs::read_to_string(&draft_path)?;
+    let content = format!("{}{}", frontmatter, file_str);
     fs::write(&post_path, content)?;
     fs::remove_file(&draft_path)?;
     println!("Blog '{}' published from 'draft' to 'post'.", name);

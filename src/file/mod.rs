@@ -1,7 +1,7 @@
 //! Module for handling blog and page files, including adding, removing, and parsing metadata.
 //! It provides functions to manage blog posts and pages in a static site generator context.
 
-use std::{env, error::Error, fs, io::Read, path};
+use std::{env, error::Error, fs, io::Read, path::{Path, PathBuf}};
 
 use serde::{Deserialize, Serialize};
 
@@ -15,8 +15,8 @@ pub mod page;
 /// * `tags` - Optional tags associated with the blog.
 /// * `categories` - Optional categories associated with the blog.
 /// * `prva` - A boolean indicating if the blog is private.
-/// * `content` - The main content of the blog in markdown format.
-#[derive(Debug, Deserialize, Serialize, Clone)]
+/// * `file` - The fd of the blog file, only used for [std::fs::File::read_to_string].
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Metadata {
     pub title: String,
     pub date: String,
@@ -24,8 +24,7 @@ pub struct Metadata {
     pub tags: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
     pub prva: bool,
-    // TODO: with path replace content, reduce main mermory usage
-    pub content: String
+    pub path: PathBuf
 }
 
 impl Metadata {
@@ -37,7 +36,7 @@ impl Metadata {
             tags: None,
             categories: None,
             prva: false,
-            content: String::new()
+            path: PathBuf::new()
         }
     }
 }
@@ -78,12 +77,12 @@ pub(crate) fn get_path(name: &String, class: &String) -> String {
 /// assert_eq!(exists, true);
 /// ```
 pub(crate) fn is_file_exist(file_path: &String) -> bool {
-    path::Path::new(file_path).exists()
+    Path::new(file_path).exists()
 }
 
 /// Parse the frontmatter and content from a blog file.
 /// # Arguments
-/// * `file` - A mutable reference to a `fs::File` representing the blog file.
+/// * `path` - A reference to a [std::path::PathBuf] representing the blog file.
 /// # Returns
 /// A `Result` containing `Metadata` if successful, or a boxed `dyn Error`.
 /// # Examples
@@ -92,14 +91,15 @@ pub(crate) fn is_file_exist(file_path: &String) -> bool {
 /// let metadata = parse_blog(file).unwrap();
 /// assert_eq!(metadata.title, "Blog Title");
 /// ```
-pub fn parse_file(mut file: fs::File) -> Result<Metadata, Box<dyn Error>> {
+pub fn parse_file(path: PathBuf) -> Result<Metadata, Box<dyn Error>> {
+    let mut file = fs::File::open(&path)?;
     let mut text = String::new();
     if let Err(_) = file.read_to_string(&mut text) {
         return Err("Failed to read blog.".into());
     }
-    let (frontmatter, markdown_content) = frontmatter_gen::extract(&text)?;
+    let (frontmatter, _) = frontmatter_gen::extract(&text)?;
     let mut metadata = Metadata::new();
-    metadata.content = markdown_content.to_string();
+    metadata.path = path;
     if let Some(title) = frontmatter.get("title").and_then(|v| v.as_str()) {
         metadata.title = title.to_string();
     }

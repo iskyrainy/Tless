@@ -31,14 +31,15 @@ pub(crate) async fn render_to_file(events_path: Vec<PathBuf>) -> std::io::Result
         .map(|path| {
             let public_dir = public_dir.clone();
             async move {
-                let metadata = match file::parse_file(fs::File::open(path)?) {
+                let metadata = match file::parse_file(path.clone()) {
                     Ok(m) => m,
                     Err(e) => {
                         eprintln!("Failed to parse changed post: {}", e);
                         return Err(std::io::Error::other(e.to_string()));
                     }
                 };
-                let md_html_str = render(&metadata.content);
+                let file_str = fs::read_to_string(path)?;
+                let md_html_str = render(&file_str);
                 let file_path = public_dir.join(&metadata.title);
                 let file = File::create(&file_path).await?;
                 let mut writer = BufWriter::new(file);
@@ -76,7 +77,8 @@ pub(crate) async fn render_all() -> std::io::Result<()> {
             let public_dir = public_dir.clone();
             async move {
                 // TODO: add a json file(store file hash value) record whether post should be re-render at server starting
-                let md_html_str = render(&post.content);
+                let file_str = fs::read_to_string(post.path)?;
+                let md_html_str = render(&file_str);
                 let file_path: PathBuf = public_dir.join(&post.title);
                 let file = File::create(&file_path).await?;
                 let mut writer = BufWriter::new(file);

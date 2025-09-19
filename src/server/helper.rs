@@ -445,3 +445,5 @@ define_list_helper!(PostsHelper, "post");
 define_list_helper!(PagesHelper, "page");
 
 // TODO: helper -> paginator, number_format, open_graph, toc
+
+// TODO: hot load custom helpers made by user
