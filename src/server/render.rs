@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap, env, fs, io::BufReader, path::PathBuf, sync::LazyLock
+    collections::HashMap, env, io::BufReader, path::PathBuf, sync::LazyLock
 };
 
 use arc_swap::ArcSwap;
@@ -42,7 +42,7 @@ pub(crate) async fn render_to_file(events_path: Vec<PathBuf>) -> std::io::Result
                         return Err(std::io::Error::other(e.to_string()));
                     }
                 };
-                let (modify_flag, file_str) = pre_hash_check(&post.path)?;
+                let (modify_flag, file_str) = pre_hash_check(&path).await?;
                 if !modify_flag {
                     return Ok(())
                 }
@@ -84,7 +84,7 @@ pub(crate) async fn render_all() -> std::io::Result<()> {
             let public_dir = public_dir.clone();
             async move {
                 // TODO: add a json file(store file hash value) record whether post should be re-render at server starting
-                let (modify_flag, file_str) = pre_hash_check(&post.path)?;
+                let (modify_flag, file_str) = pre_hash_check(&post.path).await?;
                 if !modify_flag {
                     return Ok(())
                 }
