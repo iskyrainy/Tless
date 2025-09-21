@@ -29,8 +29,9 @@ pub fn add_page(name: &String) -> Result<(), Box<dyn Error>> {
 }
 
 fn base_page_text(name: &String) -> String {
-    format!("---\ntitle: {}\ndate: {}\nlayout: index.html\n---\n", 
-        name, 
+    format!(
+        "---\ntitle: {}\ndate: {}\nlayout: index.html\n---\n",
+        name,
         Utc::now().format("%Y-%m-%d %H:%M:%S")
     )
 }

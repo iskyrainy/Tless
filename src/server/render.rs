@@ -1,11 +1,9 @@
-use std::{
-    collections::HashMap, env, io::BufReader, path::PathBuf, sync::LazyLock
-};
+use std::{collections::HashMap, env, io::BufReader, path::PathBuf, sync::LazyLock};
 
 use arc_swap::ArcSwap;
 use data_encoding::HEXUPPER;
-use futures::{stream, StreamExt};
-use pulldown_cmark::{html, Options, Parser};
+use futures::{StreamExt, stream};
+use pulldown_cmark::{Options, Parser, html};
 use ring::digest::{self, SHA256};
 use serde::{Deserialize, Serialize};
 use tera::Context;
@@ -14,7 +12,10 @@ use tokio::{
     io::{AsyncWriteExt, BufWriter},
 };
 
-use crate::{file, server::{SITE, TERA}};
+use crate::{
+    file,
+    server::{SITE, TERA},
+};
 
 /// Markdown default render options.
 const DEFAULT_OPTIONS: Options = Options::all();
@@ -44,7 +45,7 @@ pub(crate) async fn render_to_file(events_path: Vec<PathBuf>) -> std::io::Result
                 };
                 let (modify_flag, file_str) = pre_hash_check(&path).await?;
                 if !modify_flag {
-                    return Ok(())
+                    return Ok(());
                 }
                 let md_html_str = render(&file_str);
                 let file_path = public_dir.join(&metadata.title);
@@ -85,7 +86,7 @@ pub(crate) async fn render_all() -> std::io::Result<()> {
             async move {
                 let (modify_flag, file_str) = pre_hash_check(&post.path).await?;
                 if !modify_flag {
-                    return Ok(())
+                    return Ok(());
                 }
                 let md_html_str = render(&file_str);
                 let file_path: PathBuf = public_dir.join(&post.title);
@@ -124,7 +125,10 @@ pub(crate) struct HashValue {
 
 pub(crate) static POST_HASH: LazyLock<ArcSwap<HashMap<String, String>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
-    let post_hash = env::current_dir().unwrap().join("public").join(".post_hash");
+    let post_hash = env::current_dir()
+        .unwrap()
+        .join("public")
+        .join(".post_hash");
     if !post_hash.exists() {
         let _ = std::fs::File::create_new(post_hash).unwrap();
     } else {
@@ -144,10 +148,14 @@ pub(crate) async fn pre_hash_check(path: &PathBuf) -> std::io::Result<(bool, Str
         let mut context = digest::Context::new(&SHA256);
         context.update(&file_text.as_bytes());
         let hash = context.finish();
-        if POST_HASH.load().get(&path_str).unwrap().eq(&HEXUPPER.encode(hash.as_ref())) {
+        if POST_HASH
+            .load()
+            .get(&path_str)
+            .unwrap()
+            .eq(&HEXUPPER.encode(hash.as_ref()))
+        {
             return Ok((false, file_text));
         }
     }
     Ok((true, file_text))
 }
-

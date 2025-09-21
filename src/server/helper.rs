@@ -2,7 +2,13 @@ use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
 use rhai::{AST, Dynamic, Engine, Map as RhaiMap};
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, fs, path::Path, str::FromStr, sync::{Arc, LazyLock}};
+use std::{
+    collections::HashMap,
+    fs,
+    path::Path,
+    str::FromStr,
+    sync::{Arc, LazyLock},
+};
 use tera::{Function, Map, Number, Result, Tera, Value, to_value};
 
 use crate::server::{CONFIG, SITE, TERA};
@@ -627,10 +633,16 @@ fn load_rhai_helpers(helpers_dir: impl AsRef<Path>) -> Result<()> {
         let entry = entry?;
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) == Some("rhai") {
-            let name = path.file_stem().and_then(|s| s.to_str()).unwrap().to_string();
+            let name = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap()
+                .to_string();
             let script = fs::read_to_string(&path)?;
             // precompile AST
-            let ast = engine.compile(&script).map_err(|e| tera::Error::msg(format!("Compile error in {}: {}", name, e)))?;
+            let ast = engine
+                .compile(&script)
+                .map_err(|e| tera::Error::msg(format!("Compile error in {}: {}", name, e)))?;
             let ast = Arc::new(ast);
 
             // custom helper def: fn call(args) -> string/primitive
@@ -647,4 +659,3 @@ fn load_rhai_helpers(helpers_dir: impl AsRef<Path>) -> Result<()> {
     HELPER.store(Arc::new(h_clone));
     Ok(())
 }
-

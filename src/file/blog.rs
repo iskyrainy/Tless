@@ -2,7 +2,7 @@ use std::{error::Error, fs, path::PathBuf};
 
 use chrono::Utc;
 
-use crate::file::{get_path, is_file_exist, parse_file};                                                                                   
+use crate::file::{get_path, is_file_exist, parse_file};
 
 /// Add a new blog file with default content.
 /// # Arguments
@@ -32,8 +32,9 @@ pub fn add_blog(name: &String) -> Result<(), Box<dyn Error>> {
 }
 
 fn base_blog_text(name: &String) -> String {
-    format!("---\ntitle: {}\ndate: {}\ntags:\ncategories:\n---\n\n# New Blog\nWrite your content here.\n", 
-        name, 
+    format!(
+        "---\ntitle: {}\ndate: {}\ntags:\ncategories:\n---\n\n# New Blog\nWrite your content here.\n",
+        name,
         Utc::now().format("%Y-%m-%d %H:%M:%S")
     )
 }
