@@ -83,7 +83,6 @@ pub(crate) async fn render_all() -> std::io::Result<()> {
         .map(|post| {
             let public_dir = public_dir.clone();
             async move {
-                // TODO: add a json file(store file hash value) record whether post should be re-render at server starting
                 let (modify_flag, file_str) = pre_hash_check(&post.path).await?;
                 if !modify_flag {
                     return Ok(())

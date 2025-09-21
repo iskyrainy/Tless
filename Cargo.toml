@@ -29,3 +29,5 @@ num_cpus = "1.17.0"
 serde_json = "1.0.145"
 ring = "0.17.14"
 data-encoding = "2.9.0"
+rhai = { version = "1.23.4", features = ["metadata", "sync"] }
+anyhow = "1.0.100"
