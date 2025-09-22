@@ -485,30 +485,31 @@ pub(crate) async fn watch_helper(
 /// # Arguments
 /// * `shutdown_tx` - Subscribe the sender to recv a shutdown signal.
 pub(crate) fn start_watch(shutdown_tx: tokio::sync::broadcast::Sender<()>) {
-    let clone = shutdown_tx.clone();
+    let clone = shutdown_tx.subscribe();
     tokio::spawn(async move {
         result_matcher!(
-            watch_config(clone.subscribe()).await,
+            watch_config(clone).await,
             "Failed to watch configuration file"
         );
     });
-    let clone = shutdown_tx.clone();
+    let clone = shutdown_tx.subscribe();
     tokio::spawn(async move {
         result_matcher!(
-            watch_source(clone.subscribe()).await,
+            watch_source(clone).await,
             "Failed to watch source dir"
         );
     });
-    let clone = shutdown_tx.clone();
+    let clone = shutdown_tx.subscribe();
     tokio::spawn(async move {
         result_matcher!(
-            watch_layout(clone.subscribe()).await,
+            watch_layout(clone).await,
             "Failed to watch layout dir"
         );
     });
+    let clone = shutdown_tx.subscribe();
     tokio::spawn(async move {
         result_matcher!(
-            watch_helper(shutdown_tx.subscribe()).await,
+            watch_helper(clone).await,
             "Failed to watch helper dir"
         );
     });
