@@ -494,23 +494,14 @@ pub(crate) fn start_watch(shutdown_tx: tokio::sync::broadcast::Sender<()>) {
     });
     let clone = shutdown_tx.subscribe();
     tokio::spawn(async move {
-        result_matcher!(
-            watch_source(clone).await,
-            "Failed to watch source dir"
-        );
+        result_matcher!(watch_source(clone).await, "Failed to watch source dir");
     });
     let clone = shutdown_tx.subscribe();
     tokio::spawn(async move {
-        result_matcher!(
-            watch_layout(clone).await,
-            "Failed to watch layout dir"
-        );
+        result_matcher!(watch_layout(clone).await, "Failed to watch layout dir");
     });
     let clone = shutdown_tx.subscribe();
     tokio::spawn(async move {
-        result_matcher!(
-            watch_helper(clone).await,
-            "Failed to watch helper dir"
-        );
+        result_matcher!(watch_helper(clone).await, "Failed to watch helper dir");
     });
 }
