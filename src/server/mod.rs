@@ -273,7 +273,7 @@ fn is_source_file(path: &path::Path) -> bool {
         }
     }
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-        matches!(ext, "md" | "markdown" | "toml" | "html")
+        matches!(ext, "md" | "markdown" | "toml" | "html" | "rhai")
             && !path.to_str().unwrap_or_default().contains("/draft/")
     } else {
         false
@@ -432,6 +432,55 @@ pub(crate) async fn watch_layout(
     Ok(())
 }
 
+pub(crate) fn get_public_path(name: &String) -> PathBuf {
+    BASE_DIR.join("public").join(name)
+}
+
+pub(crate) async fn watch_helper(
+    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+) -> Result<(), Box<dyn Error>> {
+    let helper_path = BASE_DIR.join("helper");
+
+    // notify-debouncer-mini debounce window size: 1000ms
+    let (tx, rx) = mpsc::channel();
+    let mut debouncer = new_debouncer(Duration::from_millis(1000), None, tx)?;
+    debouncer.watch(&helper_path, notify::RecursiveMode::Recursive)?;
+
+    loop {
+        if shutdown_rx.try_recv().is_ok() {
+            break;
+        }
+        match rx.try_recv() {
+            Ok(res) => match res {
+                Ok(events) => {
+                    let interesting = events.iter().any(|e| {
+                        let event = &e.event;
+                        match event.kind {
+                            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {}
+                            _ => return false,
+                        };
+                        event.paths.iter().any(|p| is_source_file(&p))
+                    });
+
+                    if interesting {
+                        let _ = helper::load_rhai_helpers(&helper_path);
+                        println!("Helper reloaded.");
+                    }
+                }
+                Err(e) => println!("Helper dir watch error: {:?}", e),
+            },
+            Err(mpsc::TryRecvError::Empty) => {
+                // idle, sleep for 250ms
+                tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+            }
+            Err(_) => {
+                return Err("Failed to receive helper dir change event.".into());
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Start watching.
 /// # Arguments
 /// * `shutdown_tx` - Subscribe the sender to recv a shutdown signal.
@@ -450,14 +499,17 @@ pub(crate) fn start_watch(shutdown_tx: tokio::sync::broadcast::Sender<()>) {
             "Failed to watch source dir"
         );
     });
+    let clone = shutdown_tx.clone();
     tokio::spawn(async move {
         result_matcher!(
-            watch_layout(shutdown_tx.subscribe()).await,
+            watch_layout(clone.subscribe()).await,
             "Failed to watch layout dir"
         );
     });
-}
-
-pub(crate) fn get_public_path(name: &String) -> PathBuf {
-    BASE_DIR.join("public").join(name)
+    tokio::spawn(async move {
+        result_matcher!(
+            watch_helper(shutdown_tx.subscribe()).await,
+            "Failed to watch helper dir"
+        );
+    });
 }
