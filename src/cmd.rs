@@ -1,12 +1,22 @@
 use std::{env, process};
 
-use clap::{command, Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, command};
 
-use crate::{file::{blog, page}, result_matcher, server::{run}, site};
+use crate::{
+    file::{blog, page},
+    result_matcher,
+    server::run,
+    site,
+};
 
 /// tless command arguments
 #[derive(Parser, Debug)]
-#[command(author = "gdhvxcj <wangnan5117@gmail.com>", version = "0.1.0", about = "Build blog site.", long_about = "Fast and easy blog site builder.")]
+#[command(
+    author = "gdhvxcj <wangnan5117@gmail.com>",
+    version = "0.1.0",
+    about = "Build blog site.",
+    long_about = "Fast and easy blog site builder."
+)]
 #[command(propagate_version = true)]
 pub struct Command {
     #[command(subcommand)]
@@ -25,13 +35,13 @@ pub enum Commands {
     Page(Page),
 
     /// Subcommand that generates static pages, deploy to github page, backup site, etc.
-    Site(Site)
+    Site(Site),
 }
 
 #[derive(Args, Debug)]
 pub struct Server {
     /// Run Tless server.
-    /// 
+    ///
     /// usage:
     /// ```bash
     /// tless server -r
@@ -40,26 +50,26 @@ pub struct Server {
     run: bool,
 
     /// Port that server binding.
-    /// 
+    ///
     /// usage:
     /// ```bash
     /// tless server -r -p 12345
     /// ```
     #[clap(short, long, default_value_t = 8917)]
-    port: u16
+    port: u16,
 }
 
 #[derive(Args, Debug)]
 pub struct Blog {
     #[command(subcommand)]
-    pub cli: BlogArgs
+    pub cli: BlogArgs,
 }
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum BlogArgs {
     /// Add a draft blog.
     /// If file exists, print failed.
-    /// 
+    ///
     /// usage:
     /// ```bash
     /// # add a draft blog named 'FirstBlog'
@@ -68,12 +78,12 @@ pub enum BlogArgs {
     Add { name: String },
 
     /// Remove `class/name`, default class is `draft`.
-    /// 
+    ///
     /// usage:
     /// ```bash
     /// # remove draft/FirstBlog
     /// tless blog remove FirstBlog
-    /// 
+    ///
     /// # remove private post/Blog
     /// tless blog remove -c post -p Blog
     /// ```
@@ -81,17 +91,17 @@ pub enum BlogArgs {
         #[arg(short, long, default_value = "draft")]
         class: String,
 
-        name: String
+        name: String,
     },
 
     /// Publish a draft to post.
     /// If file not exists, print failed.
-    /// 
+    ///
     /// usage:
     /// ```bash
     /// # publish draft/FirstBlog to post/FirstBlog as public post
     /// tless blog publish FirstBlog
-    /// 
+    ///
     /// # publish draft/FirstBlog to post/FirstBlog as private post
     /// tless blog publish -p FirstBlog
     /// ```
@@ -99,21 +109,21 @@ pub enum BlogArgs {
         #[arg(short, long)]
         prva: bool,
 
-        name: String
-    }
+        name: String,
+    },
 }
 
 #[derive(Args, Debug)]
 pub struct Page {
     #[command(subcommand)]
-    pub cli: PageArgs
+    pub cli: PageArgs,
 }
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum PageArgs {
     /// Add a page named `name`.
     /// If page exists, print failed.
-    /// 
+    ///
     /// usage:
     /// ```bash
     /// # add a page named 'tags'
@@ -123,20 +133,20 @@ pub enum PageArgs {
 
     /// Remove page named `name`.
     /// If page not exists, print failed.
-    /// 
+    ///
     /// usage:
     /// ```bash
     /// # remove a page named 'tags'
     /// tless page remove tags
     /// ```
-    Remove { name: String }
+    Remove { name: String },
 }
 
 #[derive(Args, Debug)]
 #[group(required = true, multiple = false)]
 pub struct Site {
     /// Initialize site structure.
-    /// 
+    ///
     /// usage:
     /// ```bash
     /// tless site -i
@@ -145,7 +155,7 @@ pub struct Site {
     init: bool,
 
     /// Generate static pages.
-    /// 
+    ///
     /// usage:
     /// ```bash
     /// tless site -g
@@ -154,7 +164,7 @@ pub struct Site {
     generate: bool,
 
     /// Deploy site to github page.
-    /// 
+    ///
     /// usage:
     /// ```bash
     /// tless site -d
@@ -163,13 +173,13 @@ pub struct Site {
     deploy: bool,
 
     /// Backup site data to pkg.
-    /// 
+    ///
     /// usage:
     /// ```bash
     /// tless site -b
     /// ```
     #[clap(short, long)]
-    backup: bool
+    backup: bool,
 }
 
 /// Parse command line arguments and check the validity.
@@ -193,7 +203,9 @@ fn handle_server(server: Server) {
     if server.run && server.port > 1024 && server.port < 65_535 {
         result_matcher!(run::run(server.port), "Failed to start server");
     } else {
-        println!("Server not started. Use -r to run the server. Port must be between 1025 and 65534.");
+        println!(
+            "Server not started. Use -r to run the server. Port must be between 1025 and 65534."
+        );
         process::exit(1);
     }
 }
@@ -201,15 +213,21 @@ fn handle_server(server: Server) {
 fn handle_blog(blog: Blog) {
     match &blog.cli {
         BlogArgs::Add { name } => result_matcher!(blog::add_blog(name), "Failed to add blog"),
-        BlogArgs::Remove { class, name } => result_matcher!(blog::remove_blog(name, class), "Failed to remove blog"),
-        BlogArgs::Publish { prva, name } => result_matcher!(blog::publish_blog(name, *prva), "Failed to publish blog")
+        BlogArgs::Remove { class, name } => {
+            result_matcher!(blog::remove_blog(name, class), "Failed to remove blog")
+        }
+        BlogArgs::Publish { prva, name } => {
+            result_matcher!(blog::publish_blog(name, *prva), "Failed to publish blog")
+        }
     }
 }
 
 fn handle_page(page: Page) {
     match &page.cli {
         PageArgs::Add { name } => result_matcher!(page::add_page(name), "Failed to add page"),
-        PageArgs::Remove { name } => result_matcher!(page::remove_page(name), "Failed to remove page")
+        PageArgs::Remove { name } => {
+            result_matcher!(page::remove_page(name), "Failed to remove page")
+        }
     }
 }
 

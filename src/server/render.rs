@@ -1,16 +1,21 @@
-use std::{
-    env, fs, path::PathBuf
-};
+use std::{collections::HashMap, env, io::BufReader, path::PathBuf, sync::LazyLock};
 
-use futures::{stream, StreamExt};
-use pulldown_cmark::{html, Options, Parser};
+use arc_swap::ArcSwap;
+use data_encoding::HEXUPPER;
+use futures::{StreamExt, stream};
+use pulldown_cmark::{Options, Parser, html};
+use ring::digest::{self, SHA256};
+use serde::{Deserialize, Serialize};
 use tera::Context;
 use tokio::{
     fs::File,
     io::{AsyncWriteExt, BufWriter},
 };
 
-use crate::{file, server::{SITE, TERA}};
+use crate::{
+    file,
+    server::{SITE, TERA},
+};
 
 /// Markdown default render options.
 const DEFAULT_OPTIONS: Options = Options::all();
@@ -25,7 +30,7 @@ pub(crate) fn render(markdown: &str) -> String {
 
 pub(crate) async fn render_to_file(events_path: Vec<PathBuf>) -> std::io::Result<()> {
     let public_dir = env::current_dir()?.join("public");
-    
+
     let concurrency = num_cpus::get() + 1;
     stream::iter(events_path.into_iter())
         .map(|path| {
@@ -38,7 +43,10 @@ pub(crate) async fn render_to_file(events_path: Vec<PathBuf>) -> std::io::Result
                         return Err(std::io::Error::other(e.to_string()));
                     }
                 };
-                let file_str = fs::read_to_string(path)?;
+                let (modify_flag, file_str) = pre_hash_check(&path).await?;
+                if !modify_flag {
+                    return Ok(());
+                }
                 let md_html_str = render(&file_str);
                 let file_path = public_dir.join(&metadata.title);
                 let file = File::create(&file_path).await?;
@@ -62,7 +70,7 @@ pub(crate) async fn render_to_file(events_path: Vec<PathBuf>) -> std::io::Result
         })
         .buffer_unordered(concurrency)
         .collect::<Vec<_>>()
-        .await;
+    .await;
     Ok(())
 }
 
@@ -76,8 +84,10 @@ pub(crate) async fn render_all() -> std::io::Result<()> {
         .map(|post| {
             let public_dir = public_dir.clone();
             async move {
-                // TODO: add a json file(store file hash value) record whether post should be re-render at server starting
-                let file_str = fs::read_to_string(post.path)?;
+                let (modify_flag, file_str) = pre_hash_check(&post.path).await?;
+                if !modify_flag {
+                    return Ok(());
+                }
                 let md_html_str = render(&file_str);
                 let file_path: PathBuf = public_dir.join(&post.title);
                 let file = File::create(&file_path).await?;
@@ -102,7 +112,50 @@ pub(crate) async fn render_all() -> std::io::Result<()> {
         })
         .buffer_unordered(concurrency)
         .collect::<Vec<_>>()
-        .await;
+    .await;
 
     Ok(())
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub(crate) struct HashValue {
+    pub path: String,
+    pub hash_v: String,
+}
+
+pub(crate) static POST_HASH: LazyLock<ArcSwap<HashMap<String, String>>> = LazyLock::new(|| {
+    let mut map = HashMap::new();
+    let post_hash = env::current_dir()
+        .unwrap()
+        .join("public")
+        .join(".post_hash");
+    if !post_hash.exists() {
+        let _ = std::fs::File::create_new(post_hash).unwrap();
+    } else {
+        let file = std::fs::File::open(post_hash).unwrap();
+        let parsed: Vec<HashValue> = serde_json::from_reader(BufReader::new(file)).unwrap();
+        for hash_value in parsed {
+            map.insert(hash_value.path, hash_value.hash_v);
+        }
+    }
+    ArcSwap::from_pointee(map)
+});
+
+pub(crate) async fn pre_hash_check(path: &PathBuf) -> std::io::Result<(bool, String)> {
+    let file_text = tokio::fs::read_to_string(path).await?;
+    let path_str = path.to_string_lossy().to_string();
+    if POST_HASH.load().contains_key(&path_str) {
+        let mut context = digest::Context::new(&SHA256);
+        context.update(&file_text.as_bytes());
+        let hash = context.finish();
+        if POST_HASH
+            .load()
+            .get(&path_str)
+            .unwrap()
+            .eq(&HEXUPPER.encode(hash.as_ref()))
+        {
+            return Ok((false, file_text));
+        }
+    }
+    Ok((true, file_text))
 }

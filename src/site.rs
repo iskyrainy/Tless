@@ -37,7 +37,8 @@ pub fn init() -> Result<(), Box<dyn Error>> {
 
 /// Generate a base configuration file content.
 fn base_config_text() -> String {
-    String::from(r#"
+    String::from(
+        r#"
 # Tless Configuration File
 # This is a sample configuration file for Tless.
 # You can customize the settings as per your requirements.
@@ -53,11 +54,13 @@ menu = [
     { name = "Home", link = "/" }
 ]
 # End of configuration file
-"#)
+"#,
+    )
 }
 
 fn base_theme_text() -> String {
-    String::from(r#"
+    String::from(
+        r#"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -70,5 +73,6 @@ fn base_theme_text() -> String {
     <footer>© 2025 My Blog</footer>
 </body>
 </html>
-"#)
+"#,
+    )
 }

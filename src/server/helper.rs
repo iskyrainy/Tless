@@ -1,7 +1,15 @@
-use sha2::{Digest, Sha256};
-use std::{collections::HashMap, str::FromStr};
+use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
-use tera::{to_value, Function, Map, Number, Result, Tera, Value};
+use rhai::{AST, Dynamic, Engine, Map as RhaiMap};
+use sha2::{Digest, Sha256};
+use std::{
+    collections::HashMap,
+    fs,
+    path::Path,
+    str::FromStr,
+    sync::{Arc, LazyLock},
+};
+use tera::{Function, Map, Number, Result, Tera, Value, to_value};
 
 use crate::server::{CONFIG, SITE, TERA};
 
@@ -26,14 +34,16 @@ impl Clone for HelperFunc {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Helpers {
     funcs: HashMap<String, HelperFunc>,
 }
 
 impl Helpers {
     pub fn new() -> Self {
-        let mut helper = Self { funcs: HashMap::new() };
+        let mut helper = Self {
+            funcs: HashMap::new(),
+        };
         helper.register("date", DateHelper);
         helper.register("url_for", UrlHelper);
         helper.register("full_url_for", FullUrlHelper);
@@ -71,44 +81,48 @@ impl Helpers {
     }
 }
 
+pub(crate) static HELPER: LazyLock<ArcSwap<Helpers>> = LazyLock::new(|| {
+    let helpers = Helpers::new();
+    ArcSwap::from_pointee(helpers)
+});
+
 macro_rules! match_value_or_default {
     ($name:expr, $pat:pat => $val:ident) => {
         match $name {
-            Some(arg) => {
-                match arg {
-                    $pat => $val,
-                    _ => return Err(tera::Error::msg(format!(
+            Some(arg) => match arg {
+                $pat => $val,
+                _ => {
+                    return Err(tera::Error::msg(format!(
                         "Param type error: expect pattern `{}` but got value `{:?}`",
-                        stringify!($pat), arg
+                        stringify!($pat),
+                        arg
                     )))
                 }
             },
-            None => return Err(tera::Error::msg(format!(
-                "Param not found: `{}`",
-                stringify!($name)
-            )))
+            None => {
+                return Err(tera::Error::msg(format!(
+                    "Param not found: `{}`",
+                    stringify!($name)
+                )))
+            }
         }
     };
     ($name:expr, $pat:pat => $val:ident, $default_value:expr) => {
         match $name {
-            Some(arg) => {
-                match arg {
-                    $pat => $val,
-                    _ => $default_value
-                }
+            Some(arg) => match arg {
+                $pat => $val,
+                _ => $default_value,
             },
-            None => $default_value
+            None => $default_value,
         }
     };
     ($name:expr, $pat:pat => $val:ident, $default_value:expr, $and_then:expr) => {
         match $name {
-            Some(arg) => {
-                match arg {
-                    $pat => $and_then($val),
-                    _ => $default_value
-                }
+            Some(arg) => match arg {
+                $pat => $and_then($val),
+                _ => $default_value,
             },
-            None => $default_value
+            None => $default_value,
         }
     };
 }
@@ -118,17 +132,16 @@ struct DateHelper;
 
 impl Function for DateHelper {
     fn call(&self, args: &HashMap<String, Value>) -> tera::Result<Value> {
-        let ts = args
-            .get("ts");
+        let ts = args.get("ts");
         let ts = match ts {
             Some(ts) => match ts {
                 Value::Number(n) => n.as_i64().unwrap_or(Utc::now().timestamp()),
                 Value::String(s) => DateTime::parse_from_rfc3339(s.as_str())
                     .unwrap_or(Utc::now().into())
                     .timestamp(),
-                _ => return Err(tera::Error::msg("Missing 'path'"))
+                _ => return Err(tera::Error::msg("Missing 'path'")),
             },
-            None => Utc::now().timestamp()
+            None => Utc::now().timestamp(),
         };
 
         let fmt = match_value_or_default!(args.get("fmt"), Value::String(v) => v, &String::from("%Y-%m-%d %H:%M:%S"));
@@ -146,11 +159,19 @@ struct TagHelper {
 
 impl Function for TagHelper {
     fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
-        fn build_tag(tag: &str, default_attrs: &HashMap<String, String>, path_attr: &str, val: &Value) -> Result<String> {
+        fn build_tag(
+            tag: &str,
+            default_attrs: &HashMap<String, String>,
+            path_attr: &str,
+            val: &Value,
+        ) -> Result<String> {
             let mut html = String::new();
             if let Some(s) = val.as_str() {
                 let mut path = s.to_string();
-                if !path.starts_with('/') && !path.starts_with("http") && !path.starts_with("mailto:") {
+                if !path.starts_with('/')
+                    && !path.starts_with("http")
+                    && !path.starts_with("mailto:")
+                {
                     path = format!("/{}", path);
                 }
 
@@ -168,9 +189,15 @@ impl Function for TagHelper {
                     html.push_str(&format!(r#" {}="{}""#, k, v));
                 }
                 for (k, v) in map {
-                    let v = v.as_str().ok_or_else(|| tera::Error::msg(format!("Invalid type for key {}", k)))?;
+                    let v = v
+                        .as_str()
+                        .ok_or_else(|| tera::Error::msg(format!("Invalid type for key {}", k)))?;
                     let mut val = v.to_string();
-                    if k == path_attr && !v.starts_with('/') && !v.starts_with("http") && !v.starts_with("mailto:") {
+                    if k == path_attr
+                        && !v.starts_with('/')
+                        && !v.starts_with("http")
+                        && !v.starts_with("mailto:")
+                    {
                         val = format!("/{}", v);
                     }
                     html.push_str(&format!(r#" {}="{}""#, k, val.replace('"', "&quot;")));
@@ -182,12 +209,19 @@ impl Function for TagHelper {
             Err(tera::Error::msg("Invalid path type"))
         }
 
-        let path = args.get("path").ok_or_else(|| tera::Error::msg("Missing 'path'"))?;
+        let path = args
+            .get("path")
+            .ok_or_else(|| tera::Error::msg("Missing 'path'"))?;
         let html = match path {
             Value::Array(arr) => {
                 let mut out = Vec::new();
                 for v in arr {
-                    out.push(build_tag(&self.tag, &self.default_attrs, &self.path_attr, v)?);
+                    out.push(build_tag(
+                        &self.tag,
+                        &self.default_attrs,
+                        &self.path_attr,
+                        v,
+                    )?);
                 }
                 out.join("\n")
             }
@@ -303,7 +337,8 @@ struct PartialHelper;
 
 impl Function for PartialHelper {
     fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
-        let part_name = match_value_or_default!(args.get("name"), Value::String(v) => v, &String::from(""));
+        let part_name =
+            match_value_or_default!(args.get("name"), Value::String(v) => v, &String::from(""));
         if part_name.is_empty() {
             return Ok(Value::Null);
         }
@@ -316,36 +351,48 @@ impl Function for PartialHelper {
 
 #[derive(Clone)]
 struct ListHelper {
-    pub list: String
+    pub list: String,
 }
 
 impl Function for ListHelper {
     fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
         let orderby = match_value_or_default!(args.get("orderby"), Value::String(v) => v, &String::from("name"));
         let order = match_value_or_default!(args.get("order"), Value::Number(v) => v, 1, |v: &Number| v.as_i64().unwrap_or(1));
-        let show_count = match_value_or_default!(args.get("show_count"), Value::Bool(v) => v, &true);
+        let show_count =
+            match_value_or_default!(args.get("show_count"), Value::Bool(v) => v, &true);
         let list = match_value_or_default!(args.get("list"), Value::Bool(v) => v, &true);
         let separator = match_value_or_default!(args.get("separator"), Value::String(v) => v, &String::from(","));
         let amount = match_value_or_default!(args.get("amount"), Value::Number(v) => v, 1 << 16, |v: &Number| v.as_i64().unwrap_or(1 << 16));
-        let tag_class = match_value_or_default!(args.get("tag_class"), Value::Object(v) => v, &Map::new());
+        let tag_class =
+            match_value_or_default!(args.get("tag_class"), Value::Object(v) => v, &Map::new());
         let tag_class_ul = match_value_or_default!(tag_class.get("ul"), Value::String(v) => v, &String::from("ul"));
         let tag_class_li = match_value_or_default!(tag_class.get("li"), Value::String(v) => v, &String::from("li"));
-        let tag_class_a = match_value_or_default!(tag_class.get("a"), Value::String(v) => v, &String::from("a"));
+        let tag_class_a =
+            match_value_or_default!(tag_class.get("a"), Value::String(v) => v, &String::from("a"));
         let tag_class_count = match_value_or_default!(tag_class.get("count"), Value::String(v) => v, &String::from("count"));
 
         let mut res = String::new();
         let site = &SITE.load();
 
         let render_list = |res: &mut String, iter: Vec<(String, String, usize)>| {
-            res.push_str(&format!(r#"<ul class="{}" itemprop="keywords">"#, tag_class_ul));
+            res.push_str(&format!(
+                r#"<ul class="{}" itemprop="keywords">"#,
+                tag_class_ul
+            ));
             for (i, (name, href, count)) in iter.into_iter().enumerate() {
                 if i >= amount as usize {
                     break;
                 }
                 res.push_str(&format!(r#"<li class="{}">"#, tag_class_li));
-                res.push_str(&format!(r#"<a class="{}" href="{}">{}</a>"#, tag_class_a, href, name));
+                res.push_str(&format!(
+                    r#"<a class="{}" href="{}">{}</a>"#,
+                    tag_class_a, href, name
+                ));
                 if *show_count && count > 0 {
-                    res.push_str(&format!(r#"<span class="{}">{}</span>"#, tag_class_count, count));
+                    res.push_str(&format!(
+                        r#"<span class="{}">{}</span>"#,
+                        tag_class_count, count
+                    ));
                 }
                 res.push_str("</li>");
             }
@@ -357,9 +404,15 @@ impl Function for ListHelper {
                 if i >= amount as usize {
                     break;
                 }
-                res.push_str(&format!(r#"<a class="{}" href="{}">{}"#, tag_class_a, href, name));
+                res.push_str(&format!(
+                    r#"<a class="{}" href="{}">{}"#,
+                    tag_class_a, href, name
+                ));
                 if *show_count && count > 0 {
-                    res.push_str(&format!(r#"<span class="{}">{}</span>"#, tag_class_count, count));
+                    res.push_str(&format!(
+                        r#"<span class="{}">{}</span>"#,
+                        tag_class_count, count
+                    ));
                 }
                 res.push_str(&format!("</a>{}", separator));
             }
@@ -372,7 +425,9 @@ impl Function for ListHelper {
                 } else {
                     site.tags.iter()
                 };
-                let mut tmp: Vec<_> = data.map(|(k, v)| (k.clone(), v.path.clone(), v.posts.len())).collect();
+                let mut tmp: Vec<_> = data
+                    .map(|(k, v)| (k.clone(), v.path.clone(), v.posts.len()))
+                    .collect();
                 match orderby.as_str() {
                     "name" => {
                         if order == -1 {
@@ -396,7 +451,7 @@ impl Function for ListHelper {
                 } else {
                     render_inline(&mut res, tmp);
                 }
-            },
+            }
             "post" | "page" => {
                 let mut tmp = if self.list == "post" {
                     site.posts.clone()
@@ -406,16 +461,23 @@ impl Function for ListHelper {
                 tmp.sort_by(|x, y| {
                     let x_date = DateTime::from_str(&x.date).unwrap_or(Utc::now());
                     let y_date = DateTime::from_str(&y.date).unwrap_or(Utc::now());
-                    if order == -1 { y_date.cmp(&x_date) } else { x_date.cmp(&y_date) }
+                    if order == -1 {
+                        y_date.cmp(&x_date)
+                    } else {
+                        x_date.cmp(&y_date)
+                    }
                 });
-                let mapped: Vec<_> = tmp.into_iter().map(|p| (p.title.clone(), p.title, 0)).collect();
+                let mapped: Vec<_> = tmp
+                    .into_iter()
+                    .map(|p| (p.title.clone(), p.title, 0))
+                    .collect();
 
                 if *list {
                     render_list(&mut res, mapped);
                 } else {
                     render_inline(&mut res, mapped);
                 }
-            },
+            }
             _ => {}
         }
         Ok(Value::String(res))
@@ -423,7 +485,9 @@ impl Function for ListHelper {
 }
 
 fn make_list_helper(list: &str) -> ListHelper {
-    ListHelper { list: list.to_string() }
+    ListHelper {
+        list: list.to_string(),
+    }
 }
 
 macro_rules! define_list_helper {
@@ -446,4 +510,152 @@ define_list_helper!(PagesHelper, "page");
 
 // TODO: helper -> paginator, number_format, open_graph, toc
 
-// TODO: hot load custom helpers made by user
+#[derive(Clone)]
+struct RhaiHelper {
+    engine: Arc<Engine>,
+    ast: Arc<AST>,
+    fn_name: String,
+}
+
+impl RhaiHelper {
+    fn new(engine: Arc<Engine>, ast: Arc<AST>, fn_name: impl Into<String>) -> Self {
+        Self {
+            engine,
+            ast,
+            fn_name: fn_name.into(),
+        }
+    }
+}
+
+fn value_to_dynamic(v: &Value) -> Dynamic {
+    match v {
+        Value::Null => Dynamic::UNIT,
+        Value::Bool(b) => Dynamic::from_bool(*b),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Dynamic::from_int(i)
+            } else if let Some(f) = n.as_f64() {
+                Dynamic::from_float(f)
+            } else {
+                Dynamic::UNIT
+            }
+        }
+        Value::String(s) => Dynamic::from(s.clone()),
+        Value::Array(a) => {
+            let mut arr = Vec::with_capacity(a.len());
+            for e in a {
+                arr.push(value_to_dynamic(e));
+            }
+            Dynamic::from_array(arr)
+        }
+        Value::Object(o) => {
+            let mut map = RhaiMap::new();
+            for (k, v) in o {
+                map.insert(k.into(), value_to_dynamic(v));
+            }
+            Dynamic::from_map(map)
+        }
+    }
+}
+
+impl Function for RhaiHelper {
+    fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
+        let mut scope = rhai::Scope::new();
+        let mut arg_map = RhaiMap::new();
+        for (k, v) in args {
+            arg_map.insert(k.clone().into(), value_to_dynamic(v));
+        }
+
+        // Only accept a map named args
+        scope.push("args", Dynamic::from_map(arg_map));
+        let res = self
+            .engine
+            .call_fn::<Dynamic>(&mut scope, &self.ast, &self.fn_name, ())
+            .map_err(|e| tera::Error::msg(format!("Rhai call error: {}", e)))?;
+        let out = if res.is::<String>() {
+            Value::String(res.cast::<String>())
+        } else if res.is::<i64>() {
+            let i = res.cast::<i64>();
+            Value::Number(serde_json::Number::from(i))
+        } else if res.is::<f64>() {
+            let f = res.cast::<f64>();
+            Value::Number(
+                serde_json::Number::from_f64(f).unwrap_or_else(|| serde_json::Number::from(0)),
+            )
+        } else if res.is::<bool>() {
+            Value::Bool(res.cast::<bool>())
+        } else if res.is::<()>() {
+            Value::Null
+        } else if res.is::<rhai::ImmutableString>() {
+            // also string-like
+            Value::String(res.to_string())
+        } else if res.is_array() || res.is_map() {
+            // Serialize via JSON string as fallback
+            match rhai::serde::to_dynamic(&res).and_then(|d| {
+                serde_json::to_value(d).map_err(|e| {
+                    Box::new(rhai::EvalAltResult::ErrorRuntime(
+                        format!("{}", e).into(),
+                        rhai::Position::NONE,
+                    ))
+                })
+            }) {
+                Ok(v) => v,
+                Err(_) => Value::String(res.to_string()),
+            }
+        } else {
+            Value::String(res.to_string())
+        };
+        Ok(out)
+    }
+}
+
+fn load_rhai_helpers(helpers_dir: impl AsRef<Path>) -> Result<()> {
+    let dir = helpers_dir.as_ref();
+    if !dir.exists() {
+        return Ok(());
+    }
+    let mut engine = Engine::new();
+
+    engine.set_max_operations(1_000_000);
+    engine.set_max_expr_depths(32, 64);
+    engine.set_max_call_levels(64);
+    engine.set_max_variables(1);
+    engine.set_allow_looping(false);
+    engine.set_optimization_level(rhai::OptimizationLevel::Simple);
+    engine.disable_symbol("eval");
+    engine.disable_symbol("import");
+    engine.disable_symbol("use");
+
+    let engine = Arc::new(engine);
+
+    let mut to_add = vec![];
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("rhai") {
+            let name = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap()
+                .to_string();
+            let script = fs::read_to_string(&path)?;
+            // precompile AST
+            let ast = engine
+                .compile(&script)
+                .map_err(|e| tera::Error::msg(format!("Compile error in {}: {}", name, e)))?;
+            let ast = Arc::new(ast);
+
+            // custom helper def: fn call(args) -> string/primitive
+            let helper = RhaiHelper::new(engine.clone(), ast.clone(), "call");
+            to_add.push((name.clone(), helper));
+            println!("Registered Rhai helper: {}", name);
+        }
+    }
+    let helpers = HELPER.load();
+    let mut h_clone = (*helpers.clone()).clone();
+    for (name, helper) in to_add {
+        h_clone.register(&name, helper);
+    }
+    HELPER.store(Arc::new(h_clone));
+    Ok(())
+}

@@ -1,7 +1,13 @@
 //! Module for handling blog and page files, including adding, removing, and parsing metadata.
 //! It provides functions to manage blog posts and pages in a static site generator context.
 
-use std::{env, error::Error, fs, io::Read, path::{Path, PathBuf}};
+use std::{
+    env,
+    error::Error,
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +30,7 @@ pub struct Metadata {
     pub tags: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
     pub prva: bool,
-    pub path: PathBuf
+    pub path: PathBuf,
 }
 
 impl Metadata {
@@ -36,7 +42,7 @@ impl Metadata {
             tags: None,
             categories: None,
             prva: false,
-            path: PathBuf::new()
+            path: PathBuf::new(),
         }
     }
 }
@@ -55,7 +61,8 @@ impl Metadata {
 /// ```
 pub(crate) fn get_path(name: &String, class: &String) -> String {
     let current_dir = env::current_dir().expect("Failed to get current directory");
-    current_dir.join("source")
+    current_dir
+        .join("source")
         .join(class)
         .join(name)
         .with_extension("md")
@@ -110,13 +117,15 @@ pub fn parse_file(path: PathBuf) -> Result<Metadata, Box<dyn Error>> {
         metadata.layout = Some(layout.to_string());
     }
     if let Some(tags) = frontmatter.get("tags").and_then(|v| v.as_array()) {
-        let tag_list = tags.iter()
+        let tag_list = tags
+            .iter()
             .filter_map(|t| t.as_str().map(|s| s.to_string()))
             .collect();
         metadata.tags = Some(tag_list);
     }
     if let Some(categories) = frontmatter.get("categories").and_then(|v| v.as_array()) {
-        let category_list = categories.iter()
+        let category_list = categories
+            .iter()
             .filter_map(|c| c.as_str().map(|s| s.to_string()))
             .collect();
         metadata.categories = Some(category_list);
