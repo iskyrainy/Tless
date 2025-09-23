@@ -128,7 +128,7 @@ pub(crate) static POST_HASH: LazyLock<ArcSwap<HashMap<String, String>>> = LazyLo
     let post_hash = env::current_dir()
         .unwrap()
         .join("public")
-        .join(".post_hash");
+        .join(".post_hash.json");
     if !post_hash.exists() {
         let _ = std::fs::File::create_new(post_hash).unwrap();
     } else {
