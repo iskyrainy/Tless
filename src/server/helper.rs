@@ -609,7 +609,7 @@ impl Function for RhaiHelper {
     }
 }
 
-fn load_rhai_helpers(helpers_dir: impl AsRef<Path>) -> Result<()> {
+pub(crate) fn load_rhai_helpers(helpers_dir: impl AsRef<Path>) -> Result<()> {
     let dir = helpers_dir.as_ref();
     if !dir.exists() {
         return Ok(());

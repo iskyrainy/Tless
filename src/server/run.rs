@@ -72,6 +72,7 @@ async fn get_page(page: web::Path<String>) -> impl Responder {
     }
 }
 
+// TODO: deal private post
 #[get("/archives/{post}")]
 async fn get_archive(post: web::Path<String>) -> impl Responder {
     let post_name = post.into_inner();

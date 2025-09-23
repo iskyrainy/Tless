@@ -15,7 +15,7 @@ pub fn init() -> Result<(), Box<dyn Error>> {
     fs::write(&conf_path, base_config_text())?;
 
     // init directory structure
-    let dirs = vec!["source", "theme", "public", "plugin", "statistic"];
+    let dirs = vec!["source", "theme", "public", "plugin", "helper", "statistic"];
     for dir in dirs {
         fs::create_dir(current_dir.join(dir))?;
     }
