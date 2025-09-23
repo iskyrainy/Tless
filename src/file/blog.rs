@@ -94,8 +94,8 @@ pub fn publish_blog(name: &String, prva: bool) -> Result<(), Box<dyn Error>> {
         "---\ntitle: {}\ndate: {}\ntags: {}\ncategories: {}\nprva: {}\n---\n\n",
         metadata.title,
         Utc::now().format("%Y-%m-%d %H:%M:%S"),
-        format!("[{}]", metadata.tags.unwrap_or_default().join(", ")),
-        format!("[{}]", metadata.categories.unwrap_or_default().join(", ")),
+        format_args!("[{}]", metadata.tags.unwrap_or_default().join(", ")),
+        format_args!("[{}]", metadata.categories.unwrap_or_default().join(", ")),
         prva
     );
     let file_str = fs::read_to_string(&draft_path)?;

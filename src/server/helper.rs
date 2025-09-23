@@ -109,20 +109,14 @@ macro_rules! match_value_or_default {
     };
     ($name:expr, $pat:pat => $val:ident, $default_value:expr) => {
         match $name {
-            Some(arg) => match arg {
-                $pat => $val,
-                _ => $default_value,
-            },
-            None => $default_value,
+            Some($pat) => $val,
+            _ => $default_value,
         }
     };
     ($name:expr, $pat:pat => $val:ident, $default_value:expr, $and_then:expr) => {
         match $name {
-            Some(arg) => match arg {
-                $pat => $and_then($val),
-                _ => $default_value,
-            },
-            None => $default_value,
+            Some($pat) => $and_then($val),
+            _ => $default_value,
         }
     };
 }
@@ -145,7 +139,7 @@ impl Function for DateHelper {
         };
 
         let fmt = match_value_or_default!(args.get("fmt"), Value::String(v) => v, &String::from("%Y-%m-%d %H:%M:%S"));
-        let date = DateTime::from_timestamp(ts, 0).unwrap_or_else(|| Utc::now());
+        let date = DateTime::from_timestamp(ts, 0).unwrap_or_else(Utc::now);
         Ok(to_value(date.format(fmt).to_string())?)
     }
 }

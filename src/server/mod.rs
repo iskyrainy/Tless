@@ -309,7 +309,7 @@ pub(crate) async fn watch_source(
                             _ => return false,
                         };
                         event.paths.iter().any(|p| {
-                            if is_source_file(&p) {
+                            if is_source_file(p) {
                                 let paths = event.paths.clone();
                                 tokio::spawn(async move {
                                     result_matcher!(
@@ -362,7 +362,7 @@ pub(crate) static TERA: LazyLock<ArcSwap<Tera>> = LazyLock::new(|| {
     let tera = result_matcher!(
         Tera::new(&format!(
             "{}/layout/*.html",
-            layout_dir.to_string_lossy().to_string()
+            layout_dir.to_string_lossy()
         )),
         err_handler = |e| {
             println!("Parsing error(s): {}", e);
@@ -398,7 +398,7 @@ pub(crate) async fn watch_layout(
                             EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {}
                             _ => return false,
                         };
-                        event.paths.iter().any(|p| is_source_file(&p))
+                        event.paths.iter().any(|p| is_source_file(p))
                     });
 
                     if interesting {
@@ -459,7 +459,7 @@ pub(crate) async fn watch_helper(
                             EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {}
                             _ => return false,
                         };
-                        event.paths.iter().any(|p| is_source_file(&p))
+                        event.paths.iter().any(|p| is_source_file(p))
                     });
 
                     if interesting {

@@ -47,6 +47,12 @@ impl Metadata {
     }
 }
 
+impl Default for Metadata {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Get the file path for a blog or page based on its name and class.
 /// # Arguments
 /// * `name` - A reference to a `String` representing the name of the blog or page.
@@ -101,7 +107,7 @@ pub(crate) fn is_file_exist(file_path: &String) -> bool {
 pub fn parse_file(path: PathBuf) -> Result<Metadata, Box<dyn Error>> {
     let mut file = fs::File::open(&path)?;
     let mut text = String::new();
-    if let Err(_) = file.read_to_string(&mut text) {
+    if file.read_to_string(&mut text).is_err() {
         return Err("Failed to read blog.".into());
     }
     let (frontmatter, _) = frontmatter_gen::extract(&text)?;

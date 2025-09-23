@@ -146,7 +146,7 @@ pub(crate) async fn pre_hash_check(path: &PathBuf) -> std::io::Result<(bool, Str
     let path_str = path.to_string_lossy().to_string();
     if POST_HASH.load().contains_key(&path_str) {
         let mut context = digest::Context::new(&SHA256);
-        context.update(&file_text.as_bytes());
+        context.update(file_text.as_bytes());
         let hash = context.finish();
         if POST_HASH
             .load()
