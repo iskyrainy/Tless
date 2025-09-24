@@ -1,12 +1,15 @@
-use std::fs;
+use std::{fs, sync::Arc};
 
-use actix_web::{App, HttpResponse, HttpServer, Responder, get, web};
+use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, get, post, web};
 use tera::Context;
+use tokio::sync::Mutex;
 
 use crate::{
     result_matcher,
     server::{self, SITE, TERA, get_public_path, render},
 };
+
+use super::CONFIG;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 pub async fn run(port: u16) -> std::io::Result<()> {
@@ -24,28 +27,41 @@ pub async fn run(port: u16) -> std::io::Result<()> {
     server.await
 }
 
+#[derive(Clone, Debug)]
+struct AppState {
+    ak: String,
+    allows: Arc<Mutex<Vec<String>>>,
+}
+
 fn init_server(
     port: u16,
     shutdown_tx: tokio::sync::broadcast::Sender<()>,
 ) -> Result<actix_web::dev::Server, std::io::Error> {
     let server = HttpServer::new(|| {
+        let auth = CONFIG.load().auth.clone();
+        let data = AppState {
+            ak: auth.ak,
+            allows: Arc::new(Mutex::new(auth.allows)),
+        };
         App::new()
+            .app_data(data)
             .service(hello)
+            .service(login)
             .service(get_archive)
             .service(get_category)
             .service(get_tag)
     })
-    .shutdown_signal(async move {
-        // Wait ctrl_c for quit gracefully
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Failed to listen for ctrl_c");
-        let _ = shutdown_tx.send(());
-        println!("\nReceived exit signal, shutting down...");
-    })
-    .shutdown_timeout(60)
-    .bind(("0.0.0.0", port))?
-    .run();
+        .shutdown_signal(async move {
+            // Wait ctrl_c for quit gracefully
+            tokio::signal::ctrl_c()
+                .await
+                .expect("Failed to listen for ctrl_c");
+            let _ = shutdown_tx.send(());
+            println!("\nReceived exit signal, shutting down...");
+        })
+        .shutdown_timeout(60)
+        .bind(("0.0.0.0", port))?
+        .run();
     Ok(server)
 }
 
@@ -72,18 +88,62 @@ async fn get_page(page: web::Path<String>) -> impl Responder {
     }
 }
 
-// TODO: deal private post
+fn get_real_ip(req: &HttpRequest) -> String {
+    req.connection_info()
+        .realip_remote_addr()
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+#[post("/login")]
+async fn login(
+    ak: web::Json<String>,
+    req: HttpRequest,
+    data: web::Data<AppState>,
+) -> impl Responder {
+    if data.ak == *ak {
+        let real_ip = get_real_ip(&req);
+        let mut allows = data.allows.lock().await;
+        if !allows.contains(&real_ip) {
+            allows.push(real_ip);
+        }
+        HttpResponse::Ok().body("AK passed")
+    } else {
+        HttpResponse::Unauthorized().body("AK failed")
+    }
+}
+
 #[get("/archives/{post}")]
-async fn get_archive(post: web::Path<String>) -> impl Responder {
+async fn get_archive(
+    post: web::Path<String>,
+    req: HttpRequest,
+    data: web::Data<AppState>,
+) -> impl Responder {
     let post_name = post.into_inner();
-    let res = render::render(
-        fs::read_to_string(get_public_path(&post_name))
-            .unwrap()
-            .as_str(),
-    );
+    let is_private = SITE
+        .load()
+        .posts
+        .iter()
+        .any(|p| p.title == post_name && p.prva);
+    if is_private {
+        let real_ip = get_real_ip(&req);
+        let allows = data.allows.lock().await;
+        if !allows.contains(&real_ip) {
+            return HttpResponse::Forbidden().body("No right to access private post");
+        }
+    }
+
+    let content = match fs::read_to_string(get_public_path(&post_name)) {
+        Ok(data) => render::render(&data),
+        Err(_) => return HttpResponse::NotFound().body("Post not found"),
+    };
+
     let mut context = Context::new();
-    context.insert("content", &res);
-    HttpResponse::Ok().body(TERA.load().render("acrhive.html", &context).unwrap())
+    context.insert("content", &content);
+    match TERA.load().render("acrhive.html", &context) {
+        Ok(html) => HttpResponse::Ok().body(html),
+        Err(_) => HttpResponse::InternalServerError().body("Template render failed"),
+    }
 }
 
 #[get("/categories/{category}")]
@@ -109,4 +169,3 @@ async fn get_tag(tag: web::Path<String>) -> impl Responder {
     context.insert("name", &tag_name);
     HttpResponse::Ok().body(TERA.load().render("category.html", &context).unwrap())
 }
-

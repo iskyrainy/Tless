@@ -26,13 +26,14 @@ pub mod run;
 pub(crate) static BASE_DIR: LazyLock<PathBuf> = LazyLock::new(|| env::current_dir().unwrap());
 
 /// Configuration structure for the application.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Config {
     pub site: SiteConfig,
+    pub auth: AuthConfig,
 }
 
 /// Part of `[site]` configuration details.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct SiteConfig {
     pub title: String,
     pub description: String,
@@ -48,10 +49,16 @@ pub(crate) struct SiteConfig {
 /// # Fields
 /// * `name` - The display name of the menu item.
 /// * `link` - The URL or path the menu item points to.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Menu {
     pub name: String,
     pub link: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) struct AuthConfig {
+    pub ak: String,
+    pub allows: Vec<String>,
 }
 
 /// Get the path to the configuration file (`tless.toml`) in the current directory.
@@ -360,10 +367,7 @@ pub(crate) fn get_layout_path() -> PathBuf {
 pub(crate) static TERA: LazyLock<ArcSwap<Tera>> = LazyLock::new(|| {
     let layout_dir = get_layout_path();
     let tera = result_matcher!(
-        Tera::new(&format!(
-            "{}/layout/*.html",
-            layout_dir.to_string_lossy()
-        )),
+        Tera::new(&format!("{}/layout/*.html", layout_dir.to_string_lossy())),
         err_handler = |e| {
             println!("Parsing error(s): {}", e);
             std::process::exit(1)

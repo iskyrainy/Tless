@@ -26,15 +26,14 @@ pub fn add_blog(name: &String) -> Result<(), Box<dyn Error>> {
         return Err("Blog already exists.".into());
     }
     // TODO: time zone support
-    fs::write(&file_path, base_blog_text(name))?;
+    fs::write(&file_path, base_blog_text())?;
     println!("Blog '{}' created in 'draft'.", file_path);
     Ok(())
 }
 
-fn base_blog_text(name: &String) -> String {
+fn base_blog_text() -> String {
     format!(
-        "---\ntitle: {}\ndate: {}\ntags:\ncategories:\n---\n\n# New Blog\nWrite your content here.\n",
-        name,
+        "---\ndate: {}\ntags:\ncategories:\n---\n\n# New Blog\nWrite your content here.\n",
         Utc::now().format("%Y-%m-%d %H:%M:%S")
     )
 }

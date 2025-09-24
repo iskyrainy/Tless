@@ -53,6 +53,12 @@ favicon = ""
 menu = [
     { name = "Home", link = "/" }
 ]
+
+[auth]
+ak = ""
+allows = [
+    "127.0.0.1"
+]
 # End of configuration file
 "#,
     )
