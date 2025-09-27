@@ -112,7 +112,14 @@ pub fn parse_file(path: PathBuf) -> Result<Metadata, Box<dyn Error>> {
     }
     let (frontmatter, _) = frontmatter_gen::extract(&text)?;
     let mut metadata = Metadata::new();
-    metadata.title = path.file_name().unwrap().to_string_lossy().to_string();
+    metadata.title = path
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string()
+        .strip_suffix(".md")
+        .unwrap_or_default()
+        .to_string();
     metadata.path = path;
     if let Some(date) = frontmatter.get("date").and_then(|v| v.as_str()) {
         metadata.date = date.to_string();

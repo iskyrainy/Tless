@@ -1,4 +1,10 @@
-use std::{collections::HashMap, env, io::BufReader, path::PathBuf, sync::LazyLock};
+use std::{
+    collections::HashMap,
+    env,
+    io::BufReader,
+    path::PathBuf,
+    sync::{Arc, LazyLock},
+};
 
 use arc_swap::ArcSwap;
 use data_encoding::HEXUPPER;
@@ -70,7 +76,7 @@ pub(crate) async fn render_to_file(events_path: Vec<PathBuf>) -> std::io::Result
         })
         .buffer_unordered(concurrency)
         .collect::<Vec<_>>()
-    .await;
+        .await;
     Ok(())
 }
 
@@ -112,7 +118,7 @@ pub(crate) async fn render_all() -> std::io::Result<()> {
         })
         .buffer_unordered(concurrency)
         .collect::<Vec<_>>()
-    .await;
+        .await;
 
     Ok(())
 }
@@ -133,7 +139,8 @@ pub(crate) static POST_HASH: LazyLock<ArcSwap<HashMap<String, String>>> = LazyLo
         let _ = std::fs::File::create_new(post_hash).unwrap();
     } else {
         let file = std::fs::File::open(post_hash).unwrap();
-        let parsed: Vec<HashValue> = serde_json::from_reader(BufReader::new(file)).unwrap();
+        let parsed: Vec<HashValue> =
+            serde_json::from_reader(BufReader::new(file)).unwrap_or_default();
         for hash_value in parsed {
             map.insert(hash_value.path, hash_value.hash_v);
         }
@@ -144,17 +151,19 @@ pub(crate) static POST_HASH: LazyLock<ArcSwap<HashMap<String, String>>> = LazyLo
 pub(crate) async fn pre_hash_check(path: &PathBuf) -> std::io::Result<(bool, String)> {
     let file_text = tokio::fs::read_to_string(path).await?;
     let path_str = path.to_string_lossy().to_string();
-    if POST_HASH.load().contains_key(&path_str) {
+    let post_hash = POST_HASH.load();
+    if post_hash.contains_key(&path_str) {
         let mut context = digest::Context::new(&SHA256);
         context.update(file_text.as_bytes());
         let hash = context.finish();
-        if POST_HASH
-            .load()
-            .get(&path_str)
-            .unwrap()
-            .eq(&HEXUPPER.encode(hash.as_ref()))
-        {
+        let hash_value = HEXUPPER.encode(hash.as_ref());
+        if post_hash.get(&path_str).unwrap().eq(&hash_value) {
             return Ok((false, file_text));
+        } else {
+            let mut clone = (**post_hash).clone();
+            clone.insert(path_str, hash_value);
+            POST_HASH.store(Arc::new(clone));
+            // TODO: dump POST_HASH to public/.post_hash.json
         }
     }
     Ok((true, file_text))

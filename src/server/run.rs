@@ -51,17 +51,17 @@ fn init_server(
             .service(get_category)
             .service(get_tag)
     })
-        .shutdown_signal(async move {
-            // Wait ctrl_c for quit gracefully
-            tokio::signal::ctrl_c()
-                .await
-                .expect("Failed to listen for ctrl_c");
-            let _ = shutdown_tx.send(());
-            println!("\nReceived exit signal, shutting down...");
-        })
-        .shutdown_timeout(60)
-        .bind(("0.0.0.0", port))?
-        .run();
+    .shutdown_signal(async move {
+        // Wait ctrl_c for quit gracefully
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to listen for ctrl_c");
+        let _ = shutdown_tx.send(());
+        println!("\nReceived exit signal, shutting down...");
+    })
+    .shutdown_timeout(60)
+    .bind(("0.0.0.0", port))?
+    .run();
     Ok(server)
 }
 
@@ -133,6 +133,7 @@ async fn get_archive(
         }
     }
 
+    // TODO: not render, but return public/*
     let content = match fs::read_to_string(get_public_path(&post_name)) {
         Ok(data) => render::render(&data),
         Err(_) => return HttpResponse::NotFound().body("Post not found"),
