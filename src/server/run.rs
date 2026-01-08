@@ -37,14 +37,16 @@ fn init_server(
     port: u16,
     shutdown_tx: tokio::sync::broadcast::Sender<()>,
 ) -> Result<actix_web::dev::Server, std::io::Error> {
+    unsafe {std::env::set_var("RUST_LOG", "debug"); }
+    env_logger::init();
     let server = HttpServer::new(|| {
         let auth = CONFIG.load().auth.clone();
-        let data = AppState {
+        let app_state = web::Data::new(AppState {
             ak: auth.ak,
             allows: Arc::new(Mutex::new(auth.allows)),
-        };
+        });
         App::new()
-            .app_data(data)
+            .app_data(app_state)
             .service(hello)
             .service(login)
             .service(get_archive)
@@ -133,17 +135,9 @@ async fn get_archive(
         }
     }
 
-    // TODO: not render, but return public/*
-    let content = match fs::read_to_string(get_public_path(&post_name)) {
-        Ok(data) => render::render(&data),
-        Err(_) => return HttpResponse::NotFound().body("Post not found"),
-    };
-
-    let mut context = Context::new();
-    context.insert("content", &content);
-    match TERA.load().render("acrhive.html", &context) {
-        Ok(html) => HttpResponse::Ok().body(html),
-        Err(_) => HttpResponse::InternalServerError().body("Template render failed"),
+    match fs::read_to_string(get_public_path(&post_name)) {
+        Ok(data) => HttpResponse::Ok().body(data),
+        Err(_) => HttpResponse::NotFound().body("Post not found"),
     }
 }
 

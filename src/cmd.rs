@@ -1,6 +1,6 @@
 use std::{env, process};
 
-use clap::{Args, Parser, Subcommand, command};
+use clap::{Args, Parser, Subcommand};
 
 use crate::{
     file::{blog, page},
