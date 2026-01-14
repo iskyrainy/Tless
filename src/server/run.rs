@@ -1,8 +1,7 @@
-use std::{fs, sync::Arc};
+use std::{fs, sync::Mutex};
 
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, get, post, web};
 use tera::Context;
-use tokio::sync::Mutex;
 
 use crate::{
     result_matcher,
@@ -27,10 +26,10 @@ pub async fn run(port: u16) -> std::io::Result<()> {
     server.await
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct AppState {
     ak: String,
-    allows: Arc<Mutex<Vec<String>>>,
+    allows: Mutex<Vec<String>>,
 }
 
 fn init_server(
@@ -43,7 +42,7 @@ fn init_server(
         let auth = CONFIG.load().auth.clone();
         let app_state = web::Data::new(AppState {
             ak: auth.ak,
-            allows: Arc::new(Mutex::new(auth.allows)),
+            allows: Mutex::new(auth.allows),
         });
         App::new()
             .app_data(app_state)
@@ -105,7 +104,7 @@ async fn login(
 ) -> impl Responder {
     if data.ak == *ak {
         let real_ip = get_real_ip(&req);
-        let mut allows = data.allows.lock().await;
+        let mut allows = data.allows.lock().unwrap();
         if !allows.contains(&real_ip) {
             allows.push(real_ip);
         }
@@ -129,7 +128,7 @@ async fn get_archive(
         .any(|p| p.title == post_name && p.prva);
     if is_private {
         let real_ip = get_real_ip(&req);
-        let allows = data.allows.lock().await;
+        let allows = data.allows.lock().unwrap();
         if !allows.contains(&real_ip) {
             return HttpResponse::Forbidden().body("No right to access private post");
         }

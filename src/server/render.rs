@@ -77,6 +77,7 @@ pub(crate) async fn render_to_file(events_path: Vec<PathBuf>) -> std::io::Result
         .buffer_unordered(concurrency)
         .collect::<Vec<_>>()
         .await;
+    dump_json().await;
     Ok(())
 }
 
@@ -119,7 +120,7 @@ pub(crate) async fn render_all() -> std::io::Result<()> {
         .buffer_unordered(concurrency)
         .collect::<Vec<_>>()
         .await;
-
+    dump_json().await;
     Ok(())
 }
 
@@ -162,9 +163,30 @@ pub(crate) async fn pre_hash_check(path: &PathBuf) -> std::io::Result<(bool, Str
         } else {
             let mut clone = (**post_hash).clone();
             clone.insert(path_str, hash_value);
+            dbg!(&clone);
             POST_HASH.store(Arc::new(clone));
-            // TODO: dump POST_HASH to public/.post_hash.json
         }
     }
     Ok((true, file_text))
 }
+
+pub(crate) async fn dump_json() {
+    let map = &**POST_HASH.load();
+    dbg!(&map);
+    let json_str = match serde_json::to_string(map) {
+        Ok(str) => str,
+        Err(e) => {
+            println!("Failed to dump post hash values: {}", e);
+            String::new()
+        },
+    };
+    let post_hash = env::current_dir()
+        .unwrap()
+        .join("public")
+        .join(".post_hash.json");
+    match tokio::fs::write(post_hash, json_str).await {
+        Ok(_) => println!(".post_hash.json updated"),
+        Err(e) => println!("Failed to dump post hash values: {}", e),
+    }
+}
+
