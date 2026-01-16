@@ -153,26 +153,22 @@ pub(crate) async fn pre_hash_check(path: &PathBuf) -> std::io::Result<(bool, Str
     let file_text = tokio::fs::read_to_string(path).await?;
     let path_str = path.to_string_lossy().to_string();
     let post_hash = POST_HASH.load();
-    if post_hash.contains_key(&path_str) {
-        let mut context = digest::Context::new(&SHA256);
-        context.update(file_text.as_bytes());
-        let hash = context.finish();
-        let hash_value = HEXUPPER.encode(hash.as_ref());
-        if post_hash.get(&path_str).unwrap().eq(&hash_value) {
-            return Ok((false, file_text));
-        } else {
-            let mut clone = (**post_hash).clone();
-            clone.insert(path_str, hash_value);
-            dbg!(&clone);
-            POST_HASH.store(Arc::new(clone));
-        }
+    let mut context = digest::Context::new(&SHA256);
+    context.update(file_text.as_bytes());
+    let hash = context.finish();
+    let hash_value = HEXUPPER.encode(hash.as_ref());
+    if post_hash.get(&path_str).is_some() && post_hash.get(&path_str).unwrap().eq(&hash_value) {
+        return Ok((false, file_text));
+    } else {
+        let mut clone = (**post_hash).clone();
+        clone.insert(path_str, hash_value);
+        POST_HASH.store(Arc::new(clone));
     }
     Ok((true, file_text))
 }
 
 pub(crate) async fn dump_json() {
     let map = &**POST_HASH.load();
-    dbg!(&map);
     let json_str = match serde_json::to_string(map) {
         Ok(str) => str,
         Err(e) => {
