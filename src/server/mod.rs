@@ -195,8 +195,10 @@ pub(crate) fn extract_root_path(url: &str) -> String {
     if url.is_empty() {
         return "".to_string();
     }
-    if let Some(pos) = url.find("://") && let Some(path_pos) = url[pos + 3..].find('/') {
-            return url[pos + 3 + path_pos..].to_string();
+    if let Some(pos) = url.find("://")
+        && let Some(path_pos) = url[pos + 3..].find('/')
+    {
+        return url[pos + 3 + path_pos..].to_string();
     }
     url.to_string()
 }

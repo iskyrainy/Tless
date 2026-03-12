@@ -1,4 +1,4 @@
-use std::{fs, sync::Mutex};
+use std::sync::Mutex;
 
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, get, post, web};
 use tera::Context;
@@ -36,7 +36,9 @@ fn init_server(
     port: u16,
     shutdown_tx: tokio::sync::broadcast::Sender<()>,
 ) -> Result<actix_web::dev::Server, std::io::Error> {
-    unsafe {std::env::set_var("RUST_LOG", "debug"); }
+    unsafe {
+        std::env::set_var("RUST_LOG", "debug");
+    }
     env_logger::init();
     let server = HttpServer::new(|| {
         let auth = CONFIG.load().auth.clone();
@@ -134,8 +136,10 @@ async fn get_archive(
         }
     }
 
-    match fs::read_to_string(get_public_path(&post_name)) {
-        Ok(data) => HttpResponse::Ok().body(data),
+    match tokio::fs::read_to_string(get_public_path(&post_name)).await {
+        Ok(html) => HttpResponse::Ok()
+            .content_type("text/html; charset=utf-8")
+            .body(html),
         Err(_) => HttpResponse::NotFound().body("Post not found"),
     }
 }

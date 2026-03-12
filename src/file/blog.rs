@@ -1,6 +1,7 @@
-use std::{error::Error, fs, path::PathBuf};
+use std::{env, error::Error, fs, path::PathBuf};
 
 use chrono::Utc;
+use chrono_tz::Tz;
 
 use crate::file::{get_path, is_file_exist, parse_file};
 
@@ -25,7 +26,6 @@ pub fn add_blog(name: &String) -> Result<(), Box<dyn Error>> {
     if is_file_exist(&file_path) {
         return Err("Blog already exists.".into());
     }
-    // TODO: time zone support
     fs::write(&file_path, base_blog_text())?;
     println!("Blog '{}' created in 'draft'.", file_path);
     Ok(())
@@ -34,7 +34,7 @@ pub fn add_blog(name: &String) -> Result<(), Box<dyn Error>> {
 fn base_blog_text() -> String {
     format!(
         "---\ndate: {}\ntags:\ncategories:\n---\n\n# New Blog\nWrite your content here.\n",
-        Utc::now().format("%Y-%m-%d %H:%M:%S")
+        current_timestamp()
     )
 }
 
@@ -88,11 +88,10 @@ pub fn publish_blog(name: &String, prva: bool) -> Result<(), Box<dyn Error>> {
         return Err("Post blog already exists.".into());
     }
     let metadata = parse_file(PathBuf::from(&draft_path))?;
-    // TODO: time zone support
     let frontmatter = format!(
         "---\ntitle: {}\ndate: {}\ntags: {}\ncategories: {}\nprva: {}\n---\n\n",
         metadata.title,
-        Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        current_timestamp(),
         format_args!("[{}]", metadata.tags.unwrap_or_default().join(", ")),
         format_args!("[{}]", metadata.categories.unwrap_or_default().join(", ")),
         prva
@@ -103,4 +102,24 @@ pub fn publish_blog(name: &String, prva: bool) -> Result<(), Box<dyn Error>> {
     fs::remove_file(&draft_path)?;
     println!("Blog '{}' published from 'draft' to 'post'.", name);
     Ok(())
+}
+
+fn current_timestamp() -> String {
+    let fmt = "%Y-%m-%d %H:%M:%S";
+    configured_timezone()
+        .map(|tz| Utc::now().with_timezone(&tz).format(fmt).to_string())
+        .unwrap_or_else(|| Utc::now().format(fmt).to_string())
+}
+
+fn configured_timezone() -> Option<Tz> {
+    let config_path = env::current_dir().ok()?.join("tless.toml");
+    let config_text = fs::read_to_string(config_path).ok()?;
+    let config: toml::Value = toml::from_str(&config_text).ok()?;
+    let zone = config
+        .get("site")
+        .and_then(|site| site.get("zone"))
+        .and_then(|zone| zone.as_str())
+        .map(str::trim)
+        .filter(|zone| !zone.is_empty())?;
+    zone.parse::<Tz>().ok()
 }

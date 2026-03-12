@@ -1,9 +1,11 @@
 use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
+use pulldown_cmark::{Event, HeadingLevel, Parser as MarkdownParser, Tag, TagEnd};
 use rhai::{AST, Dynamic, Engine, Map as RhaiMap};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
+    fmt::Write,
     fs,
     path::Path,
     str::FromStr,
@@ -61,6 +63,10 @@ impl Helpers {
         helper.register("list_tags", TagsHelper);
         helper.register("list_posts", PostsHelper);
         helper.register("list_pages", PagesHelper);
+        helper.register("paginator", PaginatorHelper);
+        helper.register("number_format", NumberFormatHelper);
+        helper.register("open_graph", OpenGraphHelper);
+        helper.register("toc", TocHelper);
         helper
     }
 
@@ -502,7 +508,322 @@ define_list_helper!(TagsHelper, "tag");
 define_list_helper!(PostsHelper, "post");
 define_list_helper!(PagesHelper, "page");
 
-// TODO: helper -> paginator, number_format, open_graph, toc
+#[derive(Clone)]
+struct PaginatorHelper;
+
+impl Function for PaginatorHelper {
+    fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
+        let current = match_value_or_default!(
+            args.get("current"),
+            Value::Number(v) => v,
+            1,
+            |v: &Number| v.as_i64().unwrap_or(1).max(1)
+        );
+        let total = match_value_or_default!(
+            args.get("total"),
+            Value::Number(v) => v,
+            1,
+            |v: &Number| v.as_i64().unwrap_or(1).max(1)
+        );
+        let window = match_value_or_default!(
+            args.get("window"),
+            Value::Number(v) => v,
+            2,
+            |v: &Number| v.as_i64().unwrap_or(2).max(0)
+        );
+        let base = match_value_or_default!(
+            args.get("base"),
+            Value::String(v) => v,
+            &String::from("?page=")
+        );
+        let prev_text = match_value_or_default!(
+            args.get("prev_text"),
+            Value::String(v) => v,
+            &String::from("Prev")
+        );
+        let next_text = match_value_or_default!(
+            args.get("next_text"),
+            Value::String(v) => v,
+            &String::from("Next")
+        );
+
+        let current = current.min(total);
+        let start = (current - window).max(1);
+        let end = (current + window).min(total);
+        let mut html = String::from(r#"<nav class="pagination" aria-label="Pagination">"#);
+
+        if current > 1 {
+            let _ = write!(
+                html,
+                r#"<a class="pagination-prev" href="{}{}">{}</a>"#,
+                base,
+                current - 1,
+                prev_text
+            );
+        }
+
+        html.push_str(r#"<ol class="pagination-list">"#);
+        for page in start..=end {
+            if page == current {
+                let _ = write!(
+                    html,
+                    r#"<li><span class="pagination-current" aria-current="page">{}</span></li>"#,
+                    page
+                );
+            } else {
+                let _ = write!(
+                    html,
+                    r#"<li><a class="pagination-link" href="{}{}">{}</a></li>"#,
+                    base,
+                    page,
+                    page
+                );
+            }
+        }
+        html.push_str("</ol>");
+
+        if current < total {
+            let _ = write!(
+                html,
+                r#"<a class="pagination-next" href="{}{}">{}</a>"#,
+                base,
+                current + 1,
+                next_text
+            );
+        }
+
+        html.push_str("</nav>");
+        Ok(Value::String(html))
+    }
+}
+
+#[derive(Clone)]
+struct NumberFormatHelper;
+
+impl Function for NumberFormatHelper {
+    fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
+        let value = match args.get("value") {
+            Some(Value::Number(n)) => n
+                .as_i64()
+                .map(|v| v.to_string())
+                .or_else(|| n.as_u64().map(|v| v.to_string()))
+                .or_else(|| n.as_f64().map(|v| v.to_string()))
+                .unwrap_or_else(|| "0".to_string()),
+            Some(Value::String(s)) => s.clone(),
+            _ => return Err(tera::Error::msg("Missing 'value'")),
+        };
+        let separator = match_value_or_default!(
+            args.get("separator"),
+            Value::String(v) => v,
+            &String::from(",")
+        );
+
+        let formatted = format_number_with_separator(&value, separator);
+        Ok(Value::String(formatted))
+    }
+}
+
+#[derive(Clone)]
+struct OpenGraphHelper;
+
+impl Function for OpenGraphHelper {
+    fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
+        let config = CONFIG.load();
+        let title = match_value_or_default!(
+            args.get("title"),
+            Value::String(v) => v,
+            &config.site.title
+        );
+        let description = match_value_or_default!(
+            args.get("description"),
+            Value::String(v) => v,
+            &config.site.description
+        );
+        let url = match args.get("url") {
+            Some(Value::String(path)) => {
+                if path.starts_with("http://") || path.starts_with("https://") {
+                    path.clone()
+                } else if path.starts_with('/') {
+                    format!("{}{}", config.site.url.trim_end_matches('/'), path)
+                } else {
+                    format!("{}/{}", config.site.url.trim_end_matches('/'), path)
+                }
+            }
+            _ => config.site.url.clone(),
+        };
+        let image = match args.get("image") {
+            Some(Value::String(path)) => {
+                if path.starts_with("http://") || path.starts_with("https://") {
+                    path.clone()
+                } else if path.starts_with('/') {
+                    format!("{}{}", config.site.url.trim_end_matches('/'), path)
+                } else {
+                    format!("{}/{}", config.site.url.trim_end_matches('/'), path)
+                }
+            }
+            _ => String::new(),
+        };
+        let kind = match_value_or_default!(
+            args.get("type"),
+            Value::String(v) => v,
+            &String::from("website")
+        );
+
+        let mut tags = vec![
+            ("og:title", title.to_string()),
+            ("og:description", description.to_string()),
+            ("og:type", kind.to_string()),
+            ("og:url", url),
+            ("og:site_name", config.site.title.clone()),
+        ];
+        if !image.is_empty() {
+            tags.push(("og:image", image));
+        }
+
+        let mut html = String::new();
+        for (name, content) in tags {
+            let _ = writeln!(
+                html,
+                r#"<meta property="{}" content="{}">"#,
+                name,
+                escape_html_attr(&content)
+            );
+        }
+        Ok(Value::String(html))
+    }
+}
+
+#[derive(Clone)]
+struct TocHelper;
+
+impl Function for TocHelper {
+    fn call(&self, args: &HashMap<String, Value>) -> Result<Value> {
+        let content = match_value_or_default!(args.get("content"), Value::String(v) => v);
+        let max_level = match_value_or_default!(
+            args.get("max_level"),
+            Value::Number(v) => v,
+            6,
+            |v: &Number| v.as_u64().unwrap_or(6) as usize
+        );
+
+        let mut items = Vec::new();
+        let mut current_level = None;
+        let mut current_text = String::new();
+
+        for event in MarkdownParser::new(content) {
+            match event {
+                Event::Start(Tag::Heading { level, .. }) => {
+                    current_level = Some(level_to_usize(level));
+                    current_text.clear();
+                }
+                Event::Text(text) | Event::Code(text) => {
+                    if current_level.is_some() {
+                        current_text.push_str(&text);
+                    }
+                }
+                Event::End(TagEnd::Heading(..)) => {
+                    if let Some(level) = current_level.take()
+                        && level <= max_level
+                        && !current_text.trim().is_empty()
+                    {
+                        let text = current_text.trim().to_string();
+                        items.push((level, text.clone(), slugify(&text)));
+                    }
+                    current_text.clear();
+                }
+                _ => {}
+            }
+        }
+
+        if items.is_empty() {
+            return Ok(Value::String(String::new()));
+        }
+
+        let mut html = String::from(r#"<nav class="toc" aria-label="Table of contents"><ul>"#);
+        for (level, text, slug) in items {
+            let _ = write!(
+                html,
+                r##"<li class="toc-level-{}"><a href="#{}">{}</a></li>"##,
+                level,
+                slug,
+                escape_html_text(&text)
+            );
+        }
+        html.push_str("</ul></nav>");
+        Ok(Value::String(html))
+    }
+}
+
+fn format_number_with_separator(value: &str, separator: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        return "0".to_string();
+    }
+
+    let (sign, unsigned) = value
+        .strip_prefix('-')
+        .map(|rest| ("-", rest))
+        .unwrap_or(("", value));
+    let mut split = unsigned.splitn(2, '.');
+    let int_part = split.next().unwrap_or_default();
+    let frac_part = split.next();
+
+    let mut grouped_rev = String::new();
+    for (i, ch) in int_part.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            grouped_rev.push_str(separator);
+        }
+        grouped_rev.push(ch);
+    }
+    let int_formatted: String = grouped_rev.chars().rev().collect();
+
+    match frac_part {
+        Some(frac) if !frac.is_empty() => format!("{}{}.{}", sign, int_formatted, frac),
+        _ => format!("{}{}", sign, int_formatted),
+    }
+}
+
+fn level_to_usize(level: HeadingLevel) -> usize {
+    match level {
+        HeadingLevel::H1 => 1,
+        HeadingLevel::H2 => 2,
+        HeadingLevel::H3 => 3,
+        HeadingLevel::H4 => 4,
+        HeadingLevel::H5 => 5,
+        HeadingLevel::H6 => 6,
+    }
+}
+
+fn slugify(input: &str) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = false;
+    for ch in input.chars() {
+        let lower = ch.to_ascii_lowercase();
+        if lower.is_ascii_alphanumeric() {
+            slug.push(lower);
+            prev_dash = false;
+        } else if !prev_dash && !slug.is_empty() {
+            slug.push('-');
+            prev_dash = true;
+        }
+    }
+    slug.trim_matches('-').to_string()
+}
+
+fn escape_html_attr(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn escape_html_text(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
 
 #[derive(Clone)]
 struct RhaiHelper {

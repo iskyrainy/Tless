@@ -194,7 +194,13 @@ pub fn parse_cmd() {
 }
 
 fn handle_server(server: Server) {
-    let current_dir = env::current_dir().expect("Failed to get current directory");
+    let current_dir = match env::current_dir() {
+        Ok(dir) => dir,
+        Err(_) => {
+            eprintln!("Can not get current dir");
+            process::exit(1);
+        }
+    };
     if !current_dir.join("tless.toml").exists() {
         eprintln!("Can't find configure file in current dir.");
         process::exit(1);

@@ -149,21 +149,40 @@ pub(crate) static POST_HASH: LazyLock<ArcSwap<HashMap<String, String>>> = LazyLo
     ArcSwap::from_pointee(map)
 });
 
+fn get_post_hash_path() -> std::io::Result<PathBuf> {
+    Ok(env::current_dir()?.join("public").join(".post_hash.json"))
+}
+
+async fn persist_post_hash(hash_map: &HashMap<String, String>) -> std::io::Result<()> {
+    let hash_values: Vec<HashValue> = hash_map
+        .iter()
+        .map(|(path, hash_v)| HashValue {
+            path: path.clone(),
+            hash_v: hash_v.clone(),
+        })
+        .collect();
+    let json = serde_json::to_vec_pretty(&hash_values).map_err(std::io::Error::other)?;
+    tokio::fs::write(get_post_hash_path()?, json).await
+}
+
 pub(crate) async fn pre_hash_check(path: &PathBuf) -> std::io::Result<(bool, String)> {
     let file_text = tokio::fs::read_to_string(path).await?;
     let path_str = path.to_string_lossy().to_string();
-    let post_hash = POST_HASH.load();
     let mut context = digest::Context::new(&SHA256);
     context.update(file_text.as_bytes());
     let hash = context.finish();
     let hash_value = HEXUPPER.encode(hash.as_ref());
-    if post_hash.get(&path_str).is_some() && post_hash.get(&path_str).unwrap().eq(&hash_value) {
+    let post_hash = POST_HASH.load();
+
+    if post_hash.get(&path_str).is_some_and(|saved| saved == &hash_value) {
         return Ok((false, file_text));
-    } else {
-        let mut clone = (**post_hash).clone();
-        clone.insert(path_str, hash_value);
-        POST_HASH.store(Arc::new(clone));
     }
+
+    let mut clone = (**post_hash).clone();
+    clone.insert(path_str, hash_value);
+    persist_post_hash(&clone).await?;
+    POST_HASH.store(Arc::new(clone));
+
     Ok((true, file_text))
 }
 
@@ -185,4 +204,3 @@ pub(crate) async fn dump_json() {
         Err(e) => println!("Failed to dump post hash values: {}", e),
     }
 }
-

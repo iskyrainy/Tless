@@ -11,17 +11,17 @@ opt-level = 3
 
 [dependencies]
 actix-web = "4"
-env_logger = "0.11.8"
 arc-swap = "1.7.1"
 chrono = "0.4.41"
+chrono-tz = "0.10.4"
 clap = { version = "4.5.46", features = ["derive"] }
-notify-debouncer-full = "0.6.0"
+notify-debouncer-full = "0.7.0"
 frontmatter-gen = "0.0.5"
 notify = { version = "8.2.0", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_yaml = "0.9.34"
 tokio = { version = "1.47.1", features = ["rt-multi-thread", "macros"] }
-toml = "0.9.5"
+toml = "1.0.6"
 tera = "1.20.0"
 sha2 = "0.10.9"
 pulldown-cmark = "0.13.0"
@@ -32,3 +32,4 @@ ring = "0.17.14"
 data-encoding = "2.9.0"
 rhai = { version = "1.23.4", features = ["metadata", "sync"] }
 anyhow = "1.0.100"
+env_logger = "0.11.9"
