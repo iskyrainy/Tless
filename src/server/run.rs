@@ -36,10 +36,6 @@ fn init_server(
     port: u16,
     shutdown_tx: tokio::sync::broadcast::Sender<()>,
 ) -> Result<actix_web::dev::Server, std::io::Error> {
-    unsafe {
-        std::env::set_var("RUST_LOG", "debug");
-    }
-    env_logger::init();
     let server = HttpServer::new(|| {
         let auth = CONFIG.load().auth.clone();
         let app_state = web::Data::new(AppState {
