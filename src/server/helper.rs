@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use tera::{Context, Error, Kwargs, Map, State, Tera, TeraResult, Value};
 use tracing::info;
 
-use crate::server::{CONFIG, SITE, TERA, extract_root_path};
+use crate::server::{SITE, TERA, extract_root_path};
 
 /// Register all built-in template functions on `tera`.
 pub(crate) fn register_helpers(tera: &mut Tera) {
@@ -218,7 +218,7 @@ fn register_tag_helpers(tera: &mut Tera) {
 }
 
 fn url_helper(kwargs: Kwargs, _state: &State) -> TeraResult<Value> {
-    let site_url = &CONFIG.load().site.url;
+    let site_url = &SITE.load().config.url;
     let path = kwargs.must_get::<String>("path")?;
     let relative = kwargs.get::<bool>("relative")?.unwrap_or(true);
     let res = if relative {
@@ -234,7 +234,7 @@ fn url_helper(kwargs: Kwargs, _state: &State) -> TeraResult<Value> {
 }
 
 fn full_url_helper(kwargs: Kwargs, _state: &State) -> TeraResult<Value> {
-    let site_url = &CONFIG.load().site.url;
+    let site_url = &SITE.load().config.url;
     let path = kwargs.must_get::<String>("path")?;
     Ok(Value::normal_string(&join_url(site_url, &path)))
 }
@@ -334,8 +334,8 @@ fn list_call(kwargs: Kwargs, kind: ListKind) -> TeraResult<Value> {
     match kind {
         ListKind::Category | ListKind::Tag => {
             let data = match kind {
-                ListKind::Category => site.categories.iter(),
-                ListKind::Tag => site.tags.iter(),
+                ListKind::Category => site.category.iter(),
+                ListKind::Tag => site.tag.iter(),
                 _ => unreachable!(),
             };
             let mut tmp: Vec<_> = data
@@ -367,8 +367,8 @@ fn list_call(kwargs: Kwargs, kind: ListKind) -> TeraResult<Value> {
         }
         ListKind::Post | ListKind::Page => {
             let mut tmp = match kind {
-                ListKind::Post => site.posts.clone(),
-                ListKind::Page => site.pages.clone(),
+                ListKind::Post => site.post.clone(),
+                ListKind::Page => site.page.clone(),
                 _ => unreachable!(),
             };
             tmp.sort_by(|x, y| {
@@ -400,10 +400,10 @@ fn list_call(kwargs: Kwargs, kind: ListKind) -> TeraResult<Value> {
 
 fn register_list_helpers(tera: &mut Tera) {
     for (name, kind) in [
-        ("list_categories", ListKind::Category),
-        ("list_tags", ListKind::Tag),
-        ("list_posts", ListKind::Post),
-        ("list_pages", ListKind::Page),
+        ("list_category", ListKind::Category),
+        ("list_tag", ListKind::Tag),
+        ("list_post", ListKind::Post),
+        ("list_page", ListKind::Page),
     ] {
         tera.register_function(
             name,
@@ -499,21 +499,21 @@ fn number_format_helper(kwargs: Kwargs, _state: &State) -> TeraResult<Value> {
 }
 
 fn open_graph_helper(kwargs: Kwargs, _state: &State) -> TeraResult<Value> {
-    let config = CONFIG.load();
+    let site = SITE.load();
     let title = kwargs
         .get::<String>("title")?
-        .unwrap_or_else(|| config.site.title.clone());
+        .unwrap_or_else(|| site.config.title.clone());
     let description = kwargs
         .get::<String>("description")?
-        .unwrap_or_else(|| config.site.description.clone());
+        .unwrap_or_else(|| site.config.description.clone());
     let url = match kwargs.get::<String>("url")? {
         Some(path) if is_absolute_url(&path) => path,
-        Some(path) => join_url(&config.site.url, &path),
-        None => config.site.url.clone(),
+        Some(path) => join_url(&site.config.url, &path),
+        None => site.config.url.clone(),
     };
     let image = match kwargs.get::<String>("image")? {
         Some(path) if is_absolute_url(&path) => path,
-        Some(path) => join_url(&config.site.url, &path),
+        Some(path) => join_url(&site.config.url, &path),
         None => String::new(),
     };
     let kind = kwargs
@@ -525,7 +525,7 @@ fn open_graph_helper(kwargs: Kwargs, _state: &State) -> TeraResult<Value> {
         ("og:description", description),
         ("og:type", kind),
         ("og:url", url),
-        ("og:site_name", config.site.title.clone()),
+        ("og:site_name", site.config.title.clone()),
     ];
     if !image.is_empty() {
         tags.push(("og:image", image));

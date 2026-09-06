@@ -19,7 +19,6 @@ pub fn init() -> Result<()> {
     // Empty directories that must survive in git get a .gitkeep
     let tracked_dirs = [
         "helper",
-        "plugin",
         "source/draft",
         "source/post",
         "source/page",
@@ -29,6 +28,9 @@ pub fn init() -> Result<()> {
         fs::create_dir_all(&dir)?;
         fs::write(dir.join(".gitkeep"), "")?;
     }
+
+    write_base_robots(&current_dir.join("source"))?;
+
     // Build output, ignored by .gitignore
     fs::create_dir_all(current_dir.join("public"))?;
 
@@ -41,6 +43,74 @@ pub fn init() -> Result<()> {
     let resource_dir = current_dir.join("theme").join("base").join("assets");
     fs::create_dir_all(resource_dir)?;
     write_base_theme(&layout_dir)?;
+    Ok(())
+}
+
+fn write_base_robots(source_dir: &Path) -> Result<()> {
+    fs::write(
+        source_dir.join("robots.txt"),
+        r#"# As a condition of accessing this website, you agree to abide by the following
+# content signals:
+
+# (a)  If a Content-Signal = yes, you may collect content for the corresponding
+#      use.
+# (b)  If a Content-Signal = no, you may not collect content for the
+#      corresponding use.
+# (c)  If the website operator does not include a Content-Signal for a
+#      corresponding use, the website operator neither grants nor restricts
+#      permission via Content-Signal with respect to the corresponding use.
+
+# The content signals and their meanings are:
+
+# search:   building a search index and providing search results (e.g., returning
+#           hyperlinks and short excerpts from your website's contents). Search does not
+#           include providing AI-generated search summaries.
+# ai-input: inputting content into one or more AI models (e.g., retrieval
+#           augmented generation, grounding, or other real-time taking of content for
+#           generative AI search answers).
+# ai-train: training or fine-tuning AI models.
+# use:      how AI systems may consume the content (immediate, reference, or full).
+
+# ANY RESTRICTIONS EXPRESSED VIA CONTENT SIGNALS ARE EXPRESS RESERVATIONS OF
+# RIGHTS UNDER ARTICLE 4 OF THE EUROPEAN UNION DIRECTIVE 2019/790 ON COPYRIGHT
+# AND RELATED RIGHTS IN THE DIGITAL SINGLE MARKET.
+
+# BEGIN Cloudflare Managed content
+
+User-agent: *
+Content-Signal: search=yes,ai-train=no,use=reference
+Allow: /
+
+User-agent: Amazonbot
+Disallow: /
+
+User-agent: Applebot-Extended
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: CloudflareBrowserRenderingCrawler
+Disallow: /
+
+# User-agent: Google-Extended
+# Disallow: /
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: meta-externalagent
+Disallow: /
+
+# END Cloudflare Managed Content
+    "#,
+    )?;
     Ok(())
 }
 
@@ -132,8 +202,8 @@ favicon = ""
 menu = [
     { name = "Home", link = "/index.html" },
     { name = "Example Post", link = "/archives/hello-tless" },
-    { name = "Rust Tag", link = "/tags/rust" },
-    { name = "General Category", link = "/categories/general" }
+    { name = "Rust Tag", link = "/tag/rust" },
+    { name = "General Category", link = "/category/general" }
 ]
 "#,
     )
@@ -719,8 +789,8 @@ fn base_header() -> &'static str {
         <nav class="nav-links">
             {{ link(path="/", text="Home") }}
             {{ link(path="/about", text="About") }}
-            {{ link(path="/tags", text="Tags") }}
-            {{ link(path="/categories", text="Categories") }}
+            {{ link(path="/tag", text="Tag") }}
+            {{ link(path="/category", text="Category") }}
             <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">
                 <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
                 <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -835,22 +905,22 @@ fn base_category_theme_text() -> String {
     <h1 class="post-title">{{{{ name | default(value="Taxonomy") }}}}</h1>
     <div class="post-meta">Posts in this taxonomy.</div>
     <section class="entry-list">
-        {{{{ list_posts(order=-1, list=true, amount=20, show_count=false) | safe }}}}
+        {{{{ list_post(order=-1, list=true, amount=20, show_count=false) | safe }}}}
     </section>
     <div class="pagination">
         {{{{ paginator(current=1, total=3, base="?page=") | safe }}}}
     </div>
     <div class="taxonomy-grid">
         <section class="taxonomy-card">
-            <h2>Categories</h2>
+            <h2>Category</h2>
             <div class="taxonomy-pills">
-                {{{{ list_categories(order=-1, list=false, separator=" ", show_count=true) | safe }}}}
+                {{{{ list_category(order=-1, list=false, separator=" ", show_count=true) | safe }}}}
             </div>
         </section>
         <section class="taxonomy-card">
             <h2>Tags</h2>
             <div class="taxonomy-pills">
-                {{{{ list_tags(order=-1, list=false, separator=" ", show_count=true) | safe }}}}
+                {{{{ list_tag(order=-1, list=false, separator=" ", show_count=true) | safe }}}}
             </div>
         </section>
     </div>

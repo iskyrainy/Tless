@@ -37,18 +37,26 @@ fn render(markdown: &str) -> String {
 }
 
 #[inline]
-async fn render_class(metadata: &Metadata) -> Result<()> {
+pub fn get_cpu() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        * 2
+}
+
+#[inline]
+async fn render_file_class(metadata: &Metadata) -> Result<()> {
     let pub_dir = Arc::new(get_public_path("."));
-    if let Some(cates) = &metadata.categories {
+    if let Some(cates) = &metadata.category {
         stream::iter(cates.iter().filter(|&c| !pub_dir.join(c).exists()))
             .map(|c| {
                 let pub_dir = pub_dir.clone();
                 async move {
-                    let dst_dir = pub_dir.join(c);
+                    let dst_dir = pub_dir.join("category").join(c);
                     fs::create_dir_all(&dst_dir).await?;
                     let mut context = Context::new();
                     context.insert("site", SITE.load().as_ref());
-                    match TERA.load().render("categorie.html", &context) {
+                    match TERA.load().render("category.html", &context) {
                         Ok(rendered) => {
                             let file = File::create(dst_dir.join("index.html")).await?;
                             let mut writer = BufWriter::new(file);
@@ -56,25 +64,29 @@ async fn render_class(metadata: &Metadata) -> Result<()> {
                             writer.flush().await?;
                         }
                         Err(e) => {
-                            return Err(anyhow!("Failed to render {}: {}", &metadata.title, e));
+                            return Err(anyhow!(
+                                "Failed to render {} category: {}",
+                                &metadata.title,
+                                e
+                            ));
                         }
                     };
                     Ok(())
                 }
             })
-            .buffer_unordered(num_cpus::get() + 1)
+            .buffer_unordered(get_cpu())
             .collect::<Vec<_>>()
             .await
             .into_iter()
             .collect::<Result<()>>()?;
     }
 
-    if let Some(tags) = &metadata.tags {
+    if let Some(tags) = &metadata.tag {
         stream::iter(tags.iter().filter(|&c| !pub_dir.join(c).exists()))
             .map(|c| {
                 let pub_dir = pub_dir.clone();
                 async move {
-                    let dst_dir = pub_dir.join(c);
+                    let dst_dir = pub_dir.join("tag").join(c);
                     fs::create_dir_all(&dst_dir).await?;
                     let mut context = Context::new();
                     context.insert("site", SITE.load().as_ref());
@@ -86,13 +98,13 @@ async fn render_class(metadata: &Metadata) -> Result<()> {
                             writer.flush().await?;
                         }
                         Err(e) => {
-                            return Err(anyhow!("Failed to render {}: {}", &metadata.title, e));
+                            return Err(anyhow!("Failed to render {} tag: {}", &metadata.title, e));
                         }
                     };
                     Ok(())
                 }
             })
-            .buffer_unordered(num_cpus::get() + 1)
+            .buffer_unordered(get_cpu())
             .collect::<Vec<_>>()
             .await
             .into_iter()
@@ -139,7 +151,7 @@ async fn render_file(src: &PathBuf, dst: &PathBuf, rt: RenderType) -> Result<()>
         }
     };
     if rt == RenderType::Post {
-        render_class(&metadata).await?;
+        render_file_class(&metadata).await?;
     }
     Ok(())
 }
@@ -160,7 +172,7 @@ pub(crate) async fn render_post(paths: Vec<&PathBuf>) -> Result<()> {
                 Ok(())
             }
         })
-        .buffer_unordered(num_cpus::get() + 1)
+        .buffer_unordered(get_cpu())
         .collect::<Vec<Result<()>>>()
         .await
         .into_iter()
@@ -183,11 +195,58 @@ pub(crate) async fn render_page(paths: Vec<&PathBuf>) -> Result<()> {
                 Ok(())
             }
         })
-        .buffer_unordered(num_cpus::get() + 1)
+        .buffer_unordered(get_cpu())
         .collect::<Vec<Result<()>>>()
         .await
         .into_iter()
         .collect::<Result<()>>()
+}
+
+async fn render_class() -> Result<()> {
+    let mut context = Context::new();
+    context.insert("site", SITE.load().as_ref());
+    match TERA.load().render("category-index.html", &context) {
+        Ok(rendered) => {
+            let file =
+                File::create(get_public_path(".").join("category").join("index.html")).await?;
+            let mut writer = BufWriter::new(file);
+            writer.write_all(rendered.as_bytes()).await?;
+            writer.flush().await?;
+        }
+        Err(e) => {
+            return Err(anyhow!("Failed to render category dir: {}", e));
+        }
+    };
+    match TERA.load().render("tag-index.html", &context) {
+        Ok(rendered) => {
+            let file = File::create(get_public_path(".").join("tag").join("index.html")).await?;
+            let mut writer = BufWriter::new(file);
+            writer.write_all(rendered.as_bytes()).await?;
+            writer.flush().await?;
+        }
+        Err(e) => {
+            return Err(anyhow!("Failed to render tag dir: {}", e));
+        }
+    };
+    Ok(())
+}
+
+#[inline]
+async fn copy_robots() -> Result<()> {
+    fs::copy(
+        get_source_path(".").join("robots.txt"),
+        get_public_path(".").join("robots.txt"),
+    )
+    .await?;
+    Ok(())
+}
+
+async fn gen_atom() -> Result<()> {
+    todo!()
+}
+
+async fn gen_sitemap() -> Result<()> {
+    todo!()
 }
 
 /// Render the whole site to the public dir: every post and page, the home
@@ -203,12 +262,18 @@ pub async fn render_all() -> Result<()> {
     // gen assets
     copy_theme_resources()?;
 
-    // TODO: gen robots.txt
+    copy_robots().await?;
 
     // TODO: gen rss.xml, sitemap.xml
+    // gen_atom().await?;
+    // gen_sitemap().await?;
 
-    render_post(site.posts.iter().map(|d| &d.path).collect::<Vec<_>>()).await?;
-    render_page(site.pages.iter().map(|d| &d.path).collect::<Vec<_>>()).await?;
+    // render categorie/tag dir
+    render_class().await?;
+
+    // render posts/pages
+    render_post(site.post.iter().map(|d| &d.path).collect::<Vec<_>>()).await?;
+    render_page(site.page.iter().map(|d| &d.path).collect::<Vec<_>>()).await?;
     Ok(())
 }
 
@@ -216,9 +281,9 @@ pub async fn render_all() -> Result<()> {
 /// in sync with the sources.
 async fn remove_stale_outputs(site: &Site) {
     let current: HashSet<String> = site
-        .posts
+        .post
         .iter()
-        .chain(site.pages.iter())
+        .chain(site.page.iter())
         .map(|m| m.path.to_string_lossy().to_string())
         .collect();
     let post_hash = POST_HASH.load();
@@ -248,7 +313,7 @@ async fn remove_stale_outputs(site: &Site) {
 }
 
 /// Render the theme's `index.html` layout as the site home page.
-async fn render_home(site: &Site) -> std::io::Result<()> {
+async fn render_home(site: &Site) -> Result<()> {
     let tera = TERA.load();
     if !tera
         .get_template_names()
@@ -276,7 +341,7 @@ async fn render_home(site: &Site) -> std::io::Result<()> {
 fn recent_posts(site: &Site) -> Vec<file::Metadata> {
     let post_dir = get_source_path("post");
     let mut posts: Vec<file::Metadata> = site
-        .posts
+        .post
         .iter()
         .filter(|m| m.path.starts_with(&post_dir))
         .cloned()
@@ -300,7 +365,7 @@ fn date_rank(date: &str) -> DateTime<Utc> {
 }
 
 /// Copy the active theme's `resource/` directory into `public/`.
-pub(crate) fn copy_theme_resources() -> std::io::Result<()> {
+fn copy_theme_resources() -> Result<()> {
     let resource_dir = get_layout_path().join("assets");
     if !resource_dir.exists() {
         return Ok(());
@@ -308,7 +373,7 @@ pub(crate) fn copy_theme_resources() -> std::io::Result<()> {
     copy_dir_recursive(&resource_dir, &get_public_path("assets"))
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
@@ -332,7 +397,7 @@ static POST_HASH: LazyLock<ArcSwap<HashMap<String, String>>> = LazyLock::new(|| 
     ArcSwap::from_pointee(map)
 });
 
-async fn pre_hash_check(path: &Path) -> std::io::Result<Option<String>> {
+async fn pre_hash_check(path: &Path) -> Result<Option<String>> {
     let file_text = fs::read_to_string(path).await?;
     let path_str = path.to_string_lossy().to_string();
     let mut context = digest::Context::new(&SHA256);

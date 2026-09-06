@@ -45,7 +45,7 @@ impl Blog {
         // empty arrays instead of null values: the frontmatter parser rejects
         // keys without a value
         format!(
-            "---\ndate: {}\ntags: []\ncategories: []\n---\n\n# New Blog\nWrite your content here.\n",
+            "---\ndate: {}\ntag: []\ncategory: []\n---\n\n# New Blog\nWrite your content here.\n",
             current_timestamp()
         )
     }
@@ -73,11 +73,11 @@ impl Blog {
         }
         let metadata = parse_file(&draft_path)?;
         let frontmatter = format!(
-            "---\ntitle: {}\ndate: {}\ntags: {}\ncategories: {}\nlayout: {}\n---\n\n",
+            "---\ntitle: {}\ndate: {}\ntag: {}\ncategory: {}\nlayout: {}\n---\n\n",
             metadata.title,
             current_timestamp(),
-            format_args!("[{}]", metadata.tags.unwrap_or_default().join(", ")),
-            format_args!("[{}]", metadata.categories.unwrap_or_default().join(", ")),
+            format_args!("[{}]", metadata.tag.unwrap_or_default().join(", ")),
+            format_args!("[{}]", metadata.category.unwrap_or_default().join(", ")),
             metadata.layout.unwrap_or("archive.html".to_string()),
         );
         let file_str = fs::read_to_string(&draft_path)?;

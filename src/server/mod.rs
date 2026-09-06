@@ -77,34 +77,28 @@ fn get_config_toml() -> Result<Config> {
     Ok(toml::from_str(&config_content)?)
 }
 
-/// Global static configuration accessible throughout the application.
-static CONFIG: LazyLock<ArcSwap<Config>> = LazyLock::new(|| match get_config_toml() {
-    Ok(config) => ArcSwap::from_pointee(config),
-    Err(e) => error::fatal(format!("{e:#}")),
-});
-
 /// Struct of global source info, including `post`, `page`.
 /// # Fields
-/// * `posts` - List of all post metadata.
-/// * `pages` - List of all page metadata.
-/// * `categories` - Map of all categories.
-/// * `tags` - Map of all tags.
+/// * `post` - List of all post metadata.
+/// * `page` - List of all page metadata.
+/// * `category` - Map of all categories.
+/// * `tag` - Map of all tags.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct Site {
-    pub posts: Vec<Metadata>,
-    pub pages: Vec<Metadata>,
-    pub categories: HashMap<String, ClassMap>,
-    pub tags: HashMap<String, ClassMap>,
+    pub post: Vec<Metadata>,
+    pub page: Vec<Metadata>,
+    pub category: HashMap<String, ClassMap>,
+    pub tag: HashMap<String, ClassMap>,
     pub config: SiteConfig,
 }
 
 impl Site {
     pub fn new() -> Self {
         Site {
-            posts: vec![],
-            pages: vec![],
-            categories: HashMap::new(),
-            tags: HashMap::new(),
+            post: vec![],
+            page: vec![],
+            category: HashMap::new(),
+            tag: HashMap::new(),
             config: SiteConfig::default(),
         }
     }
@@ -125,6 +119,7 @@ pub(crate) fn get_source_path<'a, S: Into<&'a str>>(name: S) -> PathBuf {
     BASE_DIR.join("source").join(name.into())
 }
 
+#[inline]
 pub(crate) fn extract_root_path(url: &str) -> String {
     if url.is_empty() {
         return String::new();
@@ -142,15 +137,13 @@ fn get_site() -> Site {
     let post_dir = get_source_path("post");
     let page_dir = get_source_path("page");
     let mut site = Site::new();
+    site.config = match get_config_toml() {
+        Ok(config) => config.site,
+        Err(e) => error::fatal(format!("{e:#}")),
+    };
 
-    let class_path = |c: &str, t: &str| -> String {
-        let config = CONFIG.load();
-        format!(
-            "{}/{}/{}",
-            extract_root_path(config.site.url.as_str()),
-            t,
-            c
-        )
+    let class_path = |c: &str, t: &str, base_url: &String| -> String {
+        format!("{}/{}/{}", extract_root_path(base_url), t, c)
     };
 
     let load = |site: &mut Site, dirs: Vec<PathBuf>| {
@@ -173,25 +166,25 @@ fn get_site() -> Site {
                         continue;
                     }
                 };
-                site.posts.push(metadata.clone());
-                if let Some(categories) = metadata.categories.as_ref() {
-                    for c in categories {
-                        site.categories
+                site.post.push(metadata.clone());
+                if let Some(category) = metadata.category.as_ref() {
+                    for c in category {
+                        site.category
                             .entry(c.clone())
                             .or_insert_with(|| ClassMap {
-                                path: class_path(c, "categories"),
+                                path: class_path(c, "category", &site.config.url),
                                 posts: vec![],
                             })
                             .posts
                             .push(metadata.clone());
                     }
                 }
-                if let Some(tags) = metadata.tags.as_ref() {
-                    for c in tags {
-                        site.tags
+                if let Some(tag) = metadata.tag.as_ref() {
+                    for c in tag {
+                        site.tag
                             .entry(c.clone())
                             .or_insert_with(|| ClassMap {
-                                path: class_path(c, "tags"),
+                                path: class_path(c, "tag", &site.config.url),
                                 posts: vec![],
                             })
                             .posts
@@ -203,7 +196,6 @@ fn get_site() -> Site {
     };
 
     load(&mut site, vec![post_dir, page_dir]);
-    site.config = CONFIG.load().as_ref().site.clone();
     site
 }
 
@@ -291,7 +283,7 @@ async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> 
 }
 
 pub(crate) fn get_layout_path() -> PathBuf {
-    let dir = BASE_DIR.join("theme").join(&CONFIG.load().site.theme);
+    let dir = BASE_DIR.join("theme").join(&SITE.load().config.theme);
     if dir.exists() {
         dir
     } else {

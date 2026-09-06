@@ -9,10 +9,9 @@ use std::{
 use anyhow::{Result, anyhow};
 use chrono::Utc;
 use chrono_tz::Tz;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::BASE_DIR;
+use crate::{BASE_DIR, server::SITE};
 
 mod blog;
 mod page;
@@ -26,8 +25,8 @@ pub struct Metadata {
     pub title: String,
     pub date: String,
     pub layout: Option<String>,
-    pub tags: Option<Vec<String>>,
-    pub categories: Option<Vec<String>>,
+    pub tag: Option<Vec<String>>,
+    pub category: Option<Vec<String>>,
     pub path: PathBuf,
 }
 
@@ -60,15 +59,8 @@ pub(crate) fn current_timestamp() -> String {
 }
 
 fn configured_timezone() -> Option<Tz> {
-    let config_text = fs::read_to_string(BASE_DIR.join("tless.toml")).ok()?;
-    let config: toml::Value = toml::from_str(&config_text).ok()?;
-    let zone = config
-        .get("site")
-        .and_then(|site| site.get("zone"))
-        .and_then(|zone| zone.as_str())
-        .map(str::trim)
-        .filter(|zone| !zone.is_empty())?;
-    zone.parse::<Tz>().ok()
+    let site = SITE.load();
+    site.config.zone.trim().parse::<Tz>().ok()
 }
 
 /// Parse the frontmatter and file name of a source file into [Metadata].
@@ -95,19 +87,19 @@ pub fn parse_file(path: &PathBuf) -> Result<Metadata> {
     if let Some(layout) = frontmatter.get("layout").and_then(|v| v.as_str()) {
         metadata.layout = Some(layout.to_string());
     }
-    if let Some(tags) = frontmatter.get("tags").and_then(|v| v.as_array()) {
+    if let Some(tags) = frontmatter.get("tag").and_then(|v| v.as_array()) {
         let tag_list = tags
             .iter()
             .filter_map(|t| t.as_str().map(|s| s.to_string()))
             .collect();
-        metadata.tags = Some(tag_list);
+        metadata.tag = Some(tag_list);
     }
-    if let Some(categories) = frontmatter.get("categories").and_then(|v| v.as_array()) {
-        let category_list = categories
+    if let Some(category) = frontmatter.get("category").and_then(|v| v.as_array()) {
+        let category_list = category
             .iter()
             .filter_map(|c| c.as_str().map(|s| s.to_string()))
             .collect();
-        metadata.categories = Some(category_list);
+        metadata.category = Some(category_list);
     }
     Ok(metadata)
 }
@@ -116,12 +108,13 @@ pub(crate) trait ValidEntity {
     fn validate_and_get_path(name: &str) -> Result<PathBuf>;
 
     fn generate_slug(input: &str) -> String {
-        let mut slug = input.to_lowercase();
-        let re = Regex::new(r"[^a-z0-9\s]").unwrap();
-        slug = re.replace_all(&slug, " ").to_string();
-        slug = slug.split_whitespace().collect::<Vec<&str>>().join("-");
-        let re_multi = Regex::new(r"-+").unwrap();
-        slug = re_multi.replace_all(&slug, "-").to_string();
-        slug.trim_matches('-').to_string()
+        input
+            .to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join("-")
     }
 }
