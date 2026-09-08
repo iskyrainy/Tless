@@ -78,7 +78,7 @@ impl Blog {
             current_timestamp(),
             format_args!("[{}]", metadata.tag.unwrap_or_default().join(", ")),
             format_args!("[{}]", metadata.category.unwrap_or_default().join(", ")),
-            metadata.layout.unwrap_or("archive.html".to_string()),
+            metadata.layout.unwrap_or("post.html".to_string()),
         );
         let file_str = fs::read_to_string(&draft_path)?;
         let content = format!("{}{}", frontmatter, file_str);

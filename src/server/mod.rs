@@ -249,7 +249,7 @@ async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> 
                                 .iter()
                                 .filter(|p| p.starts_with(get_source_path("post")))
                                 .collect::<Vec<_>>();
-                            if let Err(err) = render::render_page(posts).await {
+                            if let Err(err) = render::render_post(posts).await {
                                 error!("Failed to render changed file: {}", err);
                             }
                             let pages = event

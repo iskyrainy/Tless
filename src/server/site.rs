@@ -116,7 +116,7 @@ Disallow: /
 
 fn write_base_theme(layout_dir: &Path) -> Result<()> {
     fs::write(layout_dir.join("index.html"), base_index_theme_text())?;
-    fs::write(layout_dir.join("archive.html"), base_archive_theme_text())?;
+    fs::write(layout_dir.join("post.html"), base_post_theme_text())?;
     fs::write(layout_dir.join("category.html"), base_category_theme_text())?;
     Ok(())
 }
@@ -201,7 +201,7 @@ theme = "base"
 favicon = ""
 menu = [
     { name = "Home", link = "/index.html" },
-    { name = "Example Post", link = "/archives/hello-tless" },
+    { name = "Example Post", link = "/post/hello-tless" },
     { name = "Rust Tag", link = "/tag/rust" },
     { name = "General Category", link = "/category/general" }
 ]
@@ -862,7 +862,7 @@ fn base_index_theme_text() -> String {
     )
 }
 
-fn base_archive_theme_text() -> String {
+fn base_post_theme_text() -> String {
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">

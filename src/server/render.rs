@@ -1,17 +1,12 @@
 use std::{
-    collections::{HashMap, HashSet},
-    io::BufReader,
     path::{Path, PathBuf},
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
 
 use anyhow::{Result, anyhow};
-use arc_swap::ArcSwap;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use data_encoding::HEXUPPER;
 use futures::{StreamExt, stream};
 use pulldown_cmark::{Options, Parser, html};
-use ring::digest::{self, SHA256};
 use tera::Context;
 use tokio::{
     fs::{self, File},
@@ -37,7 +32,7 @@ fn render(markdown: &str) -> String {
 }
 
 #[inline]
-pub fn get_cpu() -> usize {
+fn get_cpu() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
@@ -114,7 +109,6 @@ async fn render_file_class(metadata: &Metadata) -> Result<()> {
     Ok(())
 }
 
-#[derive(PartialEq)]
 enum RenderType {
     Post,
     Page,
@@ -136,7 +130,7 @@ async fn render_file(src: &PathBuf, dst: &PathBuf, rt: RenderType) -> Result<()>
     context.insert("date", &metadata.date);
     context.insert("site", SITE.load().as_ref());
     let layout = metadata.layout.as_deref().unwrap_or(match rt {
-        RenderType::Post => "archive.html",
+        RenderType::Post => "post.html",
         RenderType::Page => "page.html",
     });
     match TERA.load().render(layout, &context) {
@@ -150,7 +144,7 @@ async fn render_file(src: &PathBuf, dst: &PathBuf, rt: RenderType) -> Result<()>
             return Err(anyhow!("Failed to render {}: {}", &metadata.title, e));
         }
     };
-    if rt == RenderType::Post {
+    if let RenderType::Post = rt {
         render_file_class(&metadata).await?;
     }
     Ok(())
@@ -233,11 +227,11 @@ async fn render_class() -> Result<()> {
 
 #[inline]
 async fn copy_robots() -> Result<()> {
-    fs::copy(
-        get_source_path(".").join("robots.txt"),
-        get_public_path(".").join("robots.txt"),
-    )
-    .await?;
+    let src = get_source_path(".").join("robots.txt");
+    if src.exists() {
+        let dst = get_public_path(".").join("robots.txt");
+        fs::copy(src, dst).await?;
+    }
     Ok(())
 }
 
@@ -254,10 +248,7 @@ async fn gen_sitemap() -> Result<()> {
 pub async fn render_all() -> Result<()> {
     let site = SITE.load();
     // remove old
-    // remove_stale_outputs(&site).await;
-
-    // gen home: index
-    render_home(&site).await?;
+    remove_stale_outputs().await?;
 
     // gen assets
     copy_theme_resources()?;
@@ -265,8 +256,11 @@ pub async fn render_all() -> Result<()> {
     copy_robots().await?;
 
     // TODO: gen rss.xml, sitemap.xml
-    // gen_atom().await?;
-    // gen_sitemap().await?;
+    gen_atom().await?;
+    gen_sitemap().await?;
+
+    // gen home: index
+    render_home(&site).await?;
 
     // render categorie/tag dir
     render_class().await?;
@@ -279,37 +273,13 @@ pub async fn render_all() -> Result<()> {
 
 /// Remove public files whose source was deleted, keeping the deployed site
 /// in sync with the sources.
-async fn remove_stale_outputs(site: &Site) {
-    let current: HashSet<String> = site
-        .post
-        .iter()
-        .chain(site.page.iter())
-        .map(|m| m.path.to_string_lossy().to_string())
-        .collect();
-    let post_hash = POST_HASH.load();
-    let stale: Vec<String> = post_hash
-        .keys()
-        .filter(|path| !current.contains(*path))
-        .cloned()
-        .collect();
-    if stale.is_empty() {
-        return;
+async fn remove_stale_outputs() -> Result<()> {
+    let target = get_public_path(".");
+    if target.exists() {
+        fs::remove_dir_all(&target).await?;
+        fs::create_dir_all(&target).await?;
     }
-
-    let mut map = (**post_hash).clone();
-    for path_str in stale {
-        map.remove(&path_str);
-        let Some(stem) = Path::new(&path_str).file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        let out = get_public_path(stem);
-        match fs::remove_file(&out).await {
-            Ok(()) => info!("Removed stale output: {}", out.display()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => error!("Failed to remove stale output {}: {}", out.display(), e),
-        }
-    }
-    POST_HASH.store(Arc::new(map));
+    Ok(())
 }
 
 /// Render the theme's `index.html` layout as the site home page.
@@ -386,52 +356,4 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-
-static POST_HASH: LazyLock<ArcSwap<HashMap<String, String>>> = LazyLock::new(|| {
-    let post_hash = get_public_path(".post_hash.json");
-    // The cache file is regenerable: a missing or unreadable file just resets it
-    let map = std::fs::File::open(&post_hash)
-        .map(|file| serde_json::from_reader(BufReader::new(file)).unwrap_or_default())
-        .unwrap_or_default();
-    ArcSwap::from_pointee(map)
-});
-
-async fn pre_hash_check(path: &Path) -> Result<Option<String>> {
-    let file_text = fs::read_to_string(path).await?;
-    let path_str = path.to_string_lossy().to_string();
-    let mut context = digest::Context::new(&SHA256);
-    context.update(file_text.as_bytes());
-    let hash = context.finish();
-    let hash_value = HEXUPPER.encode(hash.as_ref());
-    let post_hash = POST_HASH.load();
-
-    if post_hash
-        .get(&path_str)
-        .is_some_and(|saved| saved == &hash_value)
-    {
-        return Ok(None);
-    }
-
-    let mut clone = (**post_hash).clone();
-    clone.insert(path_str, hash_value);
-    POST_HASH.store(Arc::new(clone));
-
-    Ok(Some(file_text))
-}
-
-async fn dump_json() {
-    let map = &**POST_HASH.load();
-    let json_str = match serde_json::to_string(map) {
-        Ok(str) => str,
-        Err(e) => {
-            info!("Failed to dump post hash values: {}", e);
-            String::new()
-        }
-    };
-    let post_hash = get_public_path(".post_hash.json");
-    match fs::write(post_hash, json_str).await {
-        Ok(_) => info!(".post_hash.json updated"),
-        Err(e) => error!("Failed to dump post hash values: {}", e),
-    }
 }
