@@ -235,8 +235,24 @@ async fn copy_robots() -> Result<()> {
     Ok(())
 }
 
-async fn gen_atom() -> Result<()> {
+#[inline]
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn gen_atom_str() -> String {
+    let mut xml = String::new();
     todo!()
+}
+
+async fn gen_atom() -> Result<()> {
+    let dst = get_public_path("atom.xml");
+    let atom_str = gen_atom_str();
+    fs::write(dst, atom_str).await?;
+    Ok(())
 }
 
 async fn gen_sitemap() -> Result<()> {
