@@ -155,7 +155,20 @@ struct Site {
 
 /// Parse command line arguments and run the selected subcommand.
 pub fn parse_cmd() -> Result<(), AppError> {
-    let input = Command::try_parse().map_err(|e| AppError::usage(e.to_string()))?;
+    let input = match Command::try_parse() {
+        Ok(input) => input,
+        // `--help` and `--version` are not errors: print them and succeed
+        Err(e)
+            if matches!(
+                e.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            ) =>
+        {
+            print!("{e}");
+            return Ok(());
+        }
+        Err(e) => return Err(AppError::usage(e.to_string())),
+    };
     match input.cmd {
         Commands::Server(server) => handle_server(server).map_err(AppError::from),
         Commands::Blog(blog) => handle_blog(blog).map_err(AppError::from),
