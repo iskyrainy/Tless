@@ -25,6 +25,7 @@ mod helper;
 mod render;
 mod run;
 mod site;
+mod template;
 
 pub use render::render_all;
 pub use run::run;
@@ -161,14 +162,18 @@ fn get_site() -> Site {
                 if !is_source_file(&path) {
                     continue;
                 }
-                let metadata = match parse_file(&path) {
+                let (metadata, _) = match parse_file(&path) {
                     Ok(m) => m,
                     Err(e) => {
                         error!("Failed to parse source file: {}", e);
                         continue;
                     }
                 };
-                site.post.push(metadata.clone());
+                if path.starts_with(&page_dir) {
+                    site.page.push(metadata.clone());
+                } else {
+                    site.post.push(metadata.clone());
+                }
                 if let Some(category) = metadata.category.as_ref() {
                     for c in category {
                         site.category
@@ -197,7 +202,7 @@ fn get_site() -> Site {
         }
     };
 
-    load(&mut site, vec![post_dir, page_dir]);
+    load(&mut site, vec![post_dir, page_dir.clone()]);
     site
 }
 
@@ -241,38 +246,38 @@ async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> 
                 break;
             },
             Some(Ok(events)) = rx.recv() => {
-                let mut update_flag = false;
+                let mut changed: Vec<PathBuf> = Vec::new();
                 for e in events {
-                    let event = &e.event;
-                    match event.kind {
+                    match e.event.kind {
                         EventKind::Create(_) | EventKind::Modify(_) => {
-                            let posts = event
-                                .paths
-                                .iter()
-                                .filter(|p| p.starts_with(get_source_path("post")))
-                                .collect::<Vec<_>>();
-                            if let Err(err) = render::render_post(posts).await {
-                                error!("Failed to render changed file: {}", err);
-                            }
-                            let pages = event
-                                .paths
-                                .iter()
-                                .filter(|p| p.starts_with(get_source_path("page")))
-                                .collect::<Vec<_>>();
-                            if let Err(err) = render::render_page(pages).await {
-                                error!("Failed to render changed file: {}", err);
-                            }
-                            update_flag = true;
+                            changed.extend(e.event.paths.iter().cloned());
                         }
                         _ => {}
                     };
                 }
-
-                if update_flag {
-                    let site = get_site();
-                    SITE.store(Arc::new(site));
-                    info!("Site global info reloaded.");
+                if changed.is_empty() {
+                    continue;
                 }
+
+                // refresh the site first so taxonomy pages pick up new terms
+                let site = get_site();
+                SITE.store(Arc::new(site));
+
+                let posts = changed
+                    .iter()
+                    .filter(|p| p.starts_with(get_source_path("post")))
+                    .collect::<Vec<_>>();
+                if let Err(err) = render::render_post(posts).await {
+                    error!("Failed to render changed file: {}", err);
+                }
+                let pages = changed
+                    .iter()
+                    .filter(|p| p.starts_with(get_source_path("page")))
+                    .collect::<Vec<_>>();
+                if let Err(err) = render::render_page(pages).await {
+                    error!("Failed to render changed file: {}", err);
+                }
+                info!("Site global info reloaded.");
             }
             else => {
                 info!("Source watcher channel closed");

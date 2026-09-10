@@ -1,0 +1,52 @@
+/* Code block syntax highlighting (highlight.js token classes).
+   Code blocks keep a dark background in both themes, so tokens use a
+   single palette. See base.html for the highlighter script. */
+.hljs {
+    color: #e8e8e8;
+    background: transparent;
+}
+
+.hljs-comment, .hljs-quote {
+    color: #7f848e;
+    font-style: italic;
+}
+
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag, .hljs-type {
+    color: #c678dd;
+}
+
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute {
+    color: #98c379;
+}
+
+.hljs-number, .hljs-built_in, .hljs-symbol, .hljs-bullet, .hljs-meta .hljs-keyword {
+    color: #d19a66;
+}
+
+.hljs-title, .hljs-title.function_, .hljs-title.class_, .hljs-section, .hljs-selector-id {
+    color: #61afef;
+}
+
+.hljs-attr, .hljs-variable, .hljs-template-variable, .hljs-selector-class {
+    color: #e06c75;
+}
+
+.hljs-tag, .hljs-name, .hljs-selector-pseudo {
+    color: #e06c75;
+}
+
+.hljs-meta, .hljs-link {
+    color: #56b6c2;
+}
+
+.hljs-deletion {
+    color: #e06c75;
+}
+
+.hljs-emphasis {
+    font-style: italic;
+}
+
+.hljs-strong {
+    font-weight: 700;
+}

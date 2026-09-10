@@ -34,7 +34,7 @@ impl ValidEntity for Page {
 impl Page {
     /// Add a new page file.
     pub fn add(name: &str) -> Result<()> {
-        let file_path = get_path(name, "page");
+        let file_path = Self::validate_and_get_path(name)?;
         fs::write(&file_path, Self::base_page_text(name))?;
         info!("Page '{}' created", file_path.display());
         Ok(())
@@ -50,7 +50,8 @@ impl Page {
 
     /// Remove an existing page file.
     pub fn remove(name: &str) -> Result<()> {
-        let file_path = get_path(name, "page");
+        let slug = Self::generate_slug(name);
+        let file_path = get_path(&slug, "page");
         if !is_file_exist(&file_path) {
             bail!("Page does not exist.");
         }

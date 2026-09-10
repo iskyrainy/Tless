@@ -64,13 +64,13 @@ fn configured_timezone() -> Option<Tz> {
 }
 
 /// Parse the frontmatter and file name of a source file into [Metadata].
-pub fn parse_file(path: &PathBuf) -> Result<Metadata> {
+pub fn parse_file(path: &PathBuf) -> Result<(Metadata, String)> {
     let mut file = fs::File::open(path)?;
     let mut text = String::new();
     if file.read_to_string(&mut text).is_err() {
         return Err(anyhow!("Failed to read blog."));
     }
-    let (frontmatter, _) = frontmatter_gen::extract(&text)?;
+    let (frontmatter, md_body) = frontmatter_gen::extract(&text)?;
     let mut metadata = Metadata::new();
     metadata.title = path
         .file_name()
@@ -101,7 +101,7 @@ pub fn parse_file(path: &PathBuf) -> Result<Metadata> {
             .collect();
         metadata.category = Some(category_list);
     }
-    Ok(metadata)
+    Ok((metadata, md_body.to_string()))
 }
 
 pub(crate) trait ValidEntity {

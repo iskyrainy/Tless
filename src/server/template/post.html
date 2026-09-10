@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block main %}
+<article class="post">
+    <h1 class="post-title">{{ title }}</h1>
+    <div class="post-meta">
+        {% if date %}
+        <time datetime="{{ date }}">{{ date(ts=date, fmt="%Y-%m-%d") }}</time>
+        {% endif %}
+        {% if category %}
+        <span class="post-tags">{% for c in category %}<a href="/category/{{ c }}">{{ c }}</a>{% endfor %}</span>
+        {% endif %}
+        {% if tag %}
+        <span class="post-tags">{% for t in tag %}<a href="/tag/{{ t }}">#{{ t }}</a>{% endfor %}</span>
+        {% endif %}
+    </div>
+    <details class="toc" open>
+        <summary>Table of contents</summary>
+        {{ toc(content=markdown, max_level=3) | safe }}
+    </details>
+    <div class="post-content">{{ content | safe }}</div>
+</article>
+{% endblock main %}

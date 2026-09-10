@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Local, NaiveDateTime, Utc};
 use futures::{StreamExt, stream};
-use pulldown_cmark::{Options, Parser, html};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, html};
 use tera::Context;
 use tokio::{
     fs::{self, File},
@@ -19,19 +19,57 @@ use crate::{
     file::{self, Metadata},
     server::{
         SITE, Site, TERA, extract_root_path, get_layout_path, get_public_path, get_source_path,
+        helper::slugify,
     },
 };
 
 /// Markdown default render options.
 const DEFAULT_OPTIONS: Options = Options::all();
 
-/// Render markdown to HTML string.
+/// Render markdown to HTML string, adding anchor ids to headings that match
+/// the slugs produced by the `toc` helper.
 #[inline]
 fn render(markdown: &str) -> String {
-    let parser = Parser::new_ext(markdown, DEFAULT_OPTIONS);
+    let events: Vec<Event> = Parser::new_ext(markdown, DEFAULT_OPTIONS).collect();
     let mut html_output = String::new();
-    html::push_html(&mut html_output, parser);
+    html::push_html(&mut html_output, add_heading_ids(events).into_iter());
     html_output
+}
+
+/// pulldown-cmark does not emit heading anchors; inject ids so that `toc`
+/// links resolve. The heading text is collected the same way the `toc`
+/// helper does, keeping both sides on the same slug.
+fn add_heading_ids(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
+    let mut out = Vec::with_capacity(events.len());
+    let mut i = 0;
+    while i < events.len() {
+        let Event::Start(Tag::Heading { level, .. }) = &events[i] else {
+            out.push(events[i].clone());
+            i += 1;
+            continue;
+        };
+        let level = *level;
+        let mut text = String::new();
+        let mut end = i + 1;
+        while end < events.len() {
+            match &events[end] {
+                Event::End(TagEnd::Heading(_)) => break,
+                Event::Text(t) | Event::Code(t) => text.push_str(t),
+                _ => {}
+            }
+            end += 1;
+        }
+        let slug = slugify(text.trim());
+        out.push(Event::Start(Tag::Heading {
+            level,
+            id: (!slug.is_empty()).then(|| slug.into()),
+            classes: Vec::new(),
+            attrs: Vec::new(),
+        }));
+        out.extend(events[i + 1..=end.min(events.len() - 1)].iter().cloned());
+        i = end + 1;
+    }
+    out
 }
 
 #[inline]
@@ -46,65 +84,90 @@ fn get_cpu() -> usize {
 async fn render_file_class(metadata: &Metadata) -> Result<()> {
     let pub_dir = Arc::new(get_public_path("."));
     if let Some(cates) = &metadata.category {
-        stream::iter(cates.iter().filter(|&c| !pub_dir.join(c).exists()))
-            .map(|c| {
-                let pub_dir = pub_dir.clone();
-                async move {
-                    let dst_dir = pub_dir.join("category").join(c);
-                    fs::create_dir_all(&dst_dir).await?;
-                    let mut context = Context::new();
-                    context.insert("site", SITE.load().as_ref());
-                    match TERA.load().render("category.html", &context) {
-                        Ok(rendered) => {
-                            let mut file = File::create(dst_dir.join("index.html")).await?;
-                            file.write_all_buf(&mut rendered.as_bytes()).await?;
-                            file.flush().await?;
-                        }
-                        Err(e) => {
-                            return Err(anyhow!(
-                                "Failed to render {} category: {}",
-                                &metadata.title,
-                                e
-                            ));
-                        }
-                    };
-                    Ok(())
-                }
-            })
-            .buffer_unordered(get_cpu())
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
-            .collect::<Result<()>>()?;
+        stream::iter(
+            cates
+                .iter()
+                .filter(|&c| !pub_dir.join("category").join(c).exists()),
+        )
+        .map(|c| {
+            let pub_dir = pub_dir.clone();
+            async move {
+                let dst_dir = pub_dir.join("category").join(c);
+                fs::create_dir_all(&dst_dir).await?;
+                let mut context = Context::new();
+                context.insert("site", SITE.load().as_ref());
+                context.insert("name", c);
+                context.insert("title", c);
+                let posts = SITE
+                    .load()
+                    .category
+                    .get(c)
+                    .map(|class| class.posts.clone())
+                    .unwrap_or_default();
+                context.insert("posts", &posts);
+                match TERA.load().render("category.html", &context) {
+                    Ok(rendered) => {
+                        let mut file = File::create(dst_dir.join("index.html")).await?;
+                        file.write_all_buf(&mut rendered.as_bytes()).await?;
+                        file.flush().await?;
+                    }
+                    Err(e) => {
+                        return Err(anyhow!(
+                            "Failed to render {} category: {}",
+                            &metadata.title,
+                            e
+                        ));
+                    }
+                };
+                Ok(())
+            }
+        })
+        .buffer_unordered(get_cpu())
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<()>>()?;
     }
 
     if let Some(tags) = &metadata.tag {
-        stream::iter(tags.iter().filter(|&c| !pub_dir.join(c).exists()))
-            .map(|c| {
-                let pub_dir = pub_dir.clone();
-                async move {
-                    let dst_dir = pub_dir.join("tag").join(c);
-                    fs::create_dir_all(&dst_dir).await?;
-                    let mut context = Context::new();
-                    context.insert("site", SITE.load().as_ref());
-                    match TERA.load().render("tag.html", &context) {
-                        Ok(rendered) => {
-                            let mut file = File::create(dst_dir.join("index.html")).await?;
-                            file.write_all_buf(&mut rendered.as_bytes()).await?;
-                            file.flush().await?;
-                        }
-                        Err(e) => {
-                            return Err(anyhow!("Failed to render {} tag: {}", &metadata.title, e));
-                        }
-                    };
-                    Ok(())
-                }
-            })
-            .buffer_unordered(get_cpu())
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
-            .collect::<Result<()>>()?;
+        stream::iter(
+            tags.iter()
+                .filter(|&c| !pub_dir.join("tag").join(c).exists()),
+        )
+        .map(|c| {
+            let pub_dir = pub_dir.clone();
+            async move {
+                let dst_dir = pub_dir.join("tag").join(c);
+                fs::create_dir_all(&dst_dir).await?;
+                let mut context = Context::new();
+                context.insert("site", SITE.load().as_ref());
+                context.insert("name", c);
+                context.insert("title", c);
+                let posts = SITE
+                    .load()
+                    .tag
+                    .get(c)
+                    .map(|class| class.posts.clone())
+                    .unwrap_or_default();
+                context.insert("posts", &posts);
+                match TERA.load().render("tag.html", &context) {
+                    Ok(rendered) => {
+                        let mut file = File::create(dst_dir.join("index.html")).await?;
+                        file.write_all_buf(&mut rendered.as_bytes()).await?;
+                        file.flush().await?;
+                    }
+                    Err(e) => {
+                        return Err(anyhow!("Failed to render {} tag: {}", &metadata.title, e));
+                    }
+                };
+                Ok(())
+            }
+        })
+        .buffer_unordered(get_cpu())
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<()>>()?;
     }
 
     Ok(())
@@ -117,18 +180,15 @@ enum RenderType {
 
 #[inline]
 async fn render_file(src: &PathBuf, dst: &PathBuf, rt: RenderType) -> Result<()> {
-    let metadata = file::parse_file(src)?;
-    let file_str = fs::read_to_string(src).await?;
-    let md_body = frontmatter_gen::extract(&file_str)
-        .map(|(_, body)| body.to_string())
-        .unwrap_or_default();
-
+    let (metadata, md_body) = file::parse_file(src)?;
     let md_html_str = render(&md_body);
     let mut context = Context::new();
     context.insert("content", &md_html_str);
     context.insert("markdown", &md_body);
     context.insert("title", &metadata.title);
     context.insert("date", &metadata.date);
+    context.insert("tag", &metadata.tag);
+    context.insert("category", &metadata.category);
     context.insert("site", SITE.load().as_ref());
     let layout = metadata.layout.as_deref().unwrap_or(match rt {
         RenderType::Post => "post.html",
@@ -156,9 +216,9 @@ pub(crate) async fn render_post(paths: Vec<&PathBuf>) -> Result<()> {
         .map(|path| {
             let pub_dir = pub_dir.clone();
             async move {
-                if let Some(name) = path.file_name() {
+                if let Some(name) = path.file_stem() {
                     let name = name.to_string_lossy().to_string();
-                    let dst_dir = pub_dir.join(&name);
+                    let dst_dir = pub_dir.join("post").join(&name);
                     fs::create_dir_all(&dst_dir).await?;
                     let dst_file = dst_dir.join("index.html");
                     render_file(path, &dst_file, RenderType::Post).await?;
@@ -179,7 +239,7 @@ pub(crate) async fn render_page(paths: Vec<&PathBuf>) -> Result<()> {
         .map(|path| {
             let pub_dir = pub_dir.clone();
             async move {
-                if let Some(name) = path.file_name() {
+                if let Some(name) = path.file_stem() {
                     let name = name.to_string_lossy().to_string();
                     let dst_dir = pub_dir.join(&name);
                     fs::create_dir_all(&dst_dir).await?;
@@ -199,10 +259,12 @@ pub(crate) async fn render_page(paths: Vec<&PathBuf>) -> Result<()> {
 async fn render_class() -> Result<()> {
     let mut context = Context::new();
     context.insert("site", SITE.load().as_ref());
+    context.insert("title", "Categories");
+    let category_dir = get_public_path(".").join("category");
+    fs::create_dir_all(&category_dir).await?;
     match TERA.load().render("category-index.html", &context) {
         Ok(rendered) => {
-            let mut file =
-                File::create(get_public_path(".").join("category").join("index.html")).await?;
+            let mut file = File::create(category_dir.join("index.html")).await?;
             file.write_all_buf(&mut rendered.as_bytes()).await?;
             file.flush().await?;
         }
@@ -210,10 +272,12 @@ async fn render_class() -> Result<()> {
             return Err(anyhow!("Failed to render category dir: {}", e));
         }
     };
+    context.insert("title", "Tags");
+    let tag_dir = get_public_path(".").join("tag");
+    fs::create_dir_all(&tag_dir).await?;
     match TERA.load().render("tag-index.html", &context) {
         Ok(rendered) => {
-            let mut file =
-                File::create(get_public_path(".").join("tag").join("index.html")).await?;
+            let mut file = File::create(tag_dir.join("index.html")).await?;
             file.write_all_buf(&mut rendered.as_bytes()).await?;
             file.flush().await?;
         }
@@ -287,7 +351,7 @@ async fn gen_atom_str() -> String {
     for post in &site.post {
         let Some(name) = post
             .path
-            .file_name()
+            .file_stem()
             .map(|n| n.to_string_lossy().into_owned())
         else {
             continue;
@@ -362,7 +426,7 @@ async fn gen_sitemap_str() -> String {
     for post in &site.post {
         let Some(name) = post
             .path
-            .file_name()
+            .file_stem()
             .map(|n| n.to_string_lossy().into_owned())
         else {
             continue;
@@ -421,7 +485,7 @@ pub async fn render_all() -> Result<()> {
 /// Remove public files whose source was deleted, keeping the deployed site
 /// in sync with the sources.
 async fn remove_stale_outputs() -> Result<()> {
-    let target = get_public_path(".");
+    let target = crate::BASE_DIR.join("public");
     if target.exists() {
         fs::remove_dir_all(&target).await?;
         fs::create_dir_all(&target).await?;
@@ -440,8 +504,9 @@ async fn render_home(site: &Site) -> Result<()> {
         return Ok(());
     }
     let mut context = Context::new();
-    // an empty content keeps `{% if content %}` blocks in the layout happy
+    // empty values keep `{% if content %}` / `{% if title %}` blocks happy
     context.insert("content", "");
+    context.insert("title", "");
     context.insert("recent_posts", &recent_posts(site));
     context.insert("site", site);
     match tera.render("index.html", &context) {
@@ -503,4 +568,26 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_adds_heading_anchors_matching_toc_slugs() {
+        let html = render("# Hello, World!\n\n## Section Two\n\n### Install `tless`");
+        assert!(html.contains(r#"<h1 id="hello-world">"#));
+        assert!(html.contains(r#"<h2 id="section-two">"#));
+        assert!(html.contains(r#"<h3 id="install-tless">"#));
+        assert_eq!(slugify("Hello, World!"), "hello-world");
+    }
+
+    #[test]
+    fn render_omits_ids_for_symbol_only_headings() {
+        // smart punctuation turns `---` into an em dash, leaving no usable slug
+        let html = render("## ---\n");
+        assert!(html.contains("<h2>"));
+        assert!(!html.contains("<h2 id="));
+    }
 }

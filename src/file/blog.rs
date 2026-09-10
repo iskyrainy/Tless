@@ -25,7 +25,7 @@ impl ValidEntity for Blog {
 
         let file_path = get_path(&slug, "draft");
         if is_file_exist(&file_path) {
-            bail!("Page already exists.");
+            bail!("Blog already exists.");
         }
         Ok(file_path)
     }
@@ -52,7 +52,8 @@ impl Blog {
 
     /// Remove an existing blog file.
     pub fn remove(name: &str, class: &str) -> Result<()> {
-        let file_path = get_path(name, class);
+        let slug = Self::generate_slug(name);
+        let file_path = get_path(&slug, class);
         if !is_file_exist(&file_path) {
             bail!("Blog does not exist.");
         }
@@ -63,15 +64,16 @@ impl Blog {
 
     /// Publish a draft blog by moving it to the post class and updating its frontmatter.
     pub fn publish(name: &str) -> Result<()> {
-        let draft_path = get_path(name, "draft");
+        let slug = Self::generate_slug(name);
+        let draft_path = get_path(&slug, "draft");
         if !is_file_exist(&draft_path) {
             bail!("Draft blog does not exist");
         }
-        let post_path = get_path(name, "post");
+        let post_path = get_path(&slug, "post");
         if is_file_exist(&post_path) {
             bail!("Post blog already exists");
         }
-        let metadata = parse_file(&draft_path)?;
+        let (metadata, md_body) = parse_file(&draft_path)?;
         let frontmatter = format!(
             "---\ntitle: {}\ndate: {}\ntag: {}\ncategory: {}\nlayout: {}\n---\n\n",
             metadata.title,
@@ -80,8 +82,7 @@ impl Blog {
             format_args!("[{}]", metadata.category.unwrap_or_default().join(", ")),
             metadata.layout.unwrap_or("post.html".to_string()),
         );
-        let file_str = fs::read_to_string(&draft_path)?;
-        let content = format!("{}{}", frontmatter, file_str);
+        let content = format!("{}{}", frontmatter, md_body);
         fs::write(&post_path, content)?;
         fs::remove_file(&draft_path)?;
         info!("Blog '{}' published from 'draft' to 'post'", name);

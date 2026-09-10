@@ -635,7 +635,9 @@ fn level_to_usize(level: HeadingLevel) -> usize {
     }
 }
 
-fn slugify(input: &str) -> String {
+/// Slug used for heading anchors, shared by the `toc` helper and the
+/// markdown renderer so that both sides agree.
+pub(crate) fn slugify(input: &str) -> String {
     let mut slug = String::new();
     let mut prev_dash = false;
     for ch in input.chars() {

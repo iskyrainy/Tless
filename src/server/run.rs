@@ -76,8 +76,9 @@ async fn get_static_file(path: String) -> impl Responder {
 /// Resolve a request path inside `public/`, rejecting traversal attempts and
 /// hidden files such as the `.post_hash.json` cache.
 fn validate_and_get_path(path: &str) -> Result<PathBuf, &'static str> {
-    if path.is_empty()
-        || path.starts_with("//")
+    // the site root is the home page
+    let path = if path.is_empty() { "index.html" } else { path };
+    if path.starts_with("//")
         || path.contains('\\')
         || path
             .split('/')
