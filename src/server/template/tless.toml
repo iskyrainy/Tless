@@ -12,8 +12,5 @@ theme = "base"
 favicon = ""
 menu = [
     { name = "Home", link = "/index.html" },
-    { name = "Example Post", link = "/post/hello-tless" },
-    { name = "Rust Tag", link = "/tag/rust" },
-    { name = "General Category", link = "/category/general" }
 ]
 
