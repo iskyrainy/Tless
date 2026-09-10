@@ -1,10 +1,11 @@
 use std::{
+    fmt::Write,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use anyhow::{Result, anyhow};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Local, NaiveDateTime, Utc};
 use futures::{StreamExt, stream};
 use pulldown_cmark::{Options, Parser, html};
 use tera::Context;
@@ -16,7 +17,9 @@ use tracing::{error, info};
 
 use crate::{
     file::{self, Metadata},
-    server::{SITE, Site, TERA, get_layout_path, get_public_path, get_source_path},
+    server::{
+        SITE, Site, TERA, extract_root_path, get_layout_path, get_public_path, get_source_path,
+    },
 };
 
 /// Markdown default render options.
@@ -236,21 +239,110 @@ async fn copy_robots() -> Result<()> {
 }
 
 #[inline]
-fn escape_html(text: &str) -> String {
+fn escape_xml(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
-fn gen_atom_str() -> String {
-    let mut xml = String::new();
-    todo!()
+#[inline]
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    let mut out: String = s.chars().take(max_chars).collect();
+    if s.chars().count() > max_chars {
+        out.push('…');
+    }
+    out
+}
+
+async fn gen_atom_str() -> String {
+    let site = SITE.load();
+    let mut xml = String::with_capacity(409600);
+    let root_path = extract_root_path(&site.config.url);
+    let root_esc = escape_xml(&root_path);
+
+    // Feed
+    let _ = writeln!(xml, r#"<?xml version="1.0" encoding="utf-8"?>"#);
+    let _ = writeln!(xml, r#"<feed xmlns="http://www.w3.org/2005/Atom">"#);
+    let _ = writeln!(
+        xml,
+        "  <author><name>{}</name></author>",
+        escape_xml(&site.config.author)
+    );
+    let _ = writeln!(xml, "  <generator>Tless</generator>");
+    let _ = writeln!(xml, "  <id>{root_esc}/atom.xml</id>");
+    let _ = writeln!(xml, r#"  <link href="{root_esc}" rel="alternate"/>"#);
+    let _ = writeln!(xml, r#"  <link href="{root_esc}/atom.xml" rel="self"/>"#);
+    let _ = writeln!(
+        xml,
+        "  <rights>{}</rights>",
+        escape_xml(&site.config.rights)
+    );
+    let _ = writeln!(
+        xml,
+        "  <subtitle>{}</subtitle>",
+        escape_xml(&site.config.subtitle)
+    );
+    let _ = writeln!(xml, "  <title>{}</title>", escape_xml(&site.config.title));
+    let _ = writeln!(xml, "  <updated>{}</updated>", Local::now().to_rfc3339());
+
+    // Entries
+    for post in &site.post {
+        let Some(name) = post
+            .path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+        else {
+            continue;
+        };
+        let name_esc = escape_xml(&name);
+
+        let _ = writeln!(xml, "  <entry>");
+        if let Some(cates) = &post.category {
+            for c in cates {
+                let _ = writeln!(xml, "    <category>{}</category>", escape_xml(c));
+            }
+        }
+        let content = fs::read_to_string(get_public_path(name.as_str()).join("index.html"))
+            .await
+            .unwrap_or_default();
+
+        let _ = writeln!(
+            xml,
+            "    <content type=\"html\">{}</content>",
+            escape_xml(&content)
+        );
+
+        let _ = writeln!(xml, "    <id>{root_esc}/post/{name_esc}</id>");
+        let _ = writeln!(
+            xml,
+            r#"    <link href="{root_esc}/post/{name_esc}" rel="alternate"/>"#
+        );
+        let _ = writeln!(
+            xml,
+            r#"    <link href="{root_esc}/post/{name_esc}" rel="self" type="application/atom+xml"/>"#
+        );
+
+        let summary = truncate_chars(&content, 200);
+        let _ = writeln!(
+            xml,
+            "    <summary type=\"html\">{}</summary>",
+            escape_xml(&summary)
+        );
+        let _ = writeln!(xml, "    <published>{}</published>", &post.date);
+        let _ = writeln!(xml, "    <title>{}</title>", escape_xml(&post.title));
+        let _ = writeln!(xml, "    <updated>{}</updated>", &post.date);
+        let _ = writeln!(xml, "  </entry>");
+    }
+    let _ = writeln!(xml, "</feed>");
+
+    xml
 }
 
 async fn gen_atom() -> Result<()> {
     let dst = get_public_path("atom.xml");
-    let atom_str = gen_atom_str();
+    let atom_str = gen_atom_str().await;
     fs::write(dst, atom_str).await?;
     Ok(())
 }
@@ -271,8 +363,7 @@ pub async fn render_all() -> Result<()> {
 
     copy_robots().await?;
 
-    // TODO: gen rss.xml, sitemap.xml
-    gen_atom().await?;
+    // TODO: sitemap.xml
     gen_sitemap().await?;
 
     // gen home: index
@@ -284,6 +375,7 @@ pub async fn render_all() -> Result<()> {
     // render posts/pages
     render_post(site.post.iter().map(|d| &d.path).collect::<Vec<_>>()).await?;
     render_page(site.page.iter().map(|d| &d.path).collect::<Vec<_>>()).await?;
+    gen_atom().await?;
     Ok(())
 }
 

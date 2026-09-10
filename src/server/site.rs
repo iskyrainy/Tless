@@ -13,16 +13,11 @@ pub fn init() -> Result<()> {
         bail!("Site already initialized in this directory");
     }
 
-    fs::write(current_dir.join("tless.toml"), base_config_text())?;
-    fs::write(current_dir.join(".gitignore"), base_gitignore_text())?;
+    fs::write(current_dir.join("tless.toml"), BASE_TLESS_CONF)?;
+    fs::write(current_dir.join(".gitignore"), BASE_GITIGNORE)?;
 
     // Empty directories that must survive in git get a .gitkeep
-    let tracked_dirs = [
-        "helper",
-        "source/draft",
-        "source/post",
-        "source/page",
-    ];
+    let tracked_dirs = ["helper", "source/draft", "source/post", "source/page"];
     for dir in tracked_dirs {
         let dir = current_dir.join(dir);
         fs::create_dir_all(&dir)?;
@@ -36,7 +31,7 @@ pub fn init() -> Result<()> {
 
     let workflows = current_dir.join(".github").join("workflows");
     fs::create_dir_all(&workflows)?;
-    fs::write(workflows.join("deploy.yml"), base_deploy_yml_text())?;
+    fs::write(workflows.join("deploy.yml"), BASE_DEPLOY_YML)?;
 
     let layout_dir = current_dir.join("theme").join("base").join("layout");
     fs::create_dir_all(&layout_dir)?;
@@ -46,71 +41,10 @@ pub fn init() -> Result<()> {
     Ok(())
 }
 
+const BASE_ROBOTS: &str = include_str!("./template/robots.txt");
+
 fn write_base_robots(source_dir: &Path) -> Result<()> {
-    fs::write(
-        source_dir.join("robots.txt"),
-        r#"# As a condition of accessing this website, you agree to abide by the following
-# content signals:
-
-# (a)  If a Content-Signal = yes, you may collect content for the corresponding
-#      use.
-# (b)  If a Content-Signal = no, you may not collect content for the
-#      corresponding use.
-# (c)  If the website operator does not include a Content-Signal for a
-#      corresponding use, the website operator neither grants nor restricts
-#      permission via Content-Signal with respect to the corresponding use.
-
-# The content signals and their meanings are:
-
-# search:   building a search index and providing search results (e.g., returning
-#           hyperlinks and short excerpts from your website's contents). Search does not
-#           include providing AI-generated search summaries.
-# ai-input: inputting content into one or more AI models (e.g., retrieval
-#           augmented generation, grounding, or other real-time taking of content for
-#           generative AI search answers).
-# ai-train: training or fine-tuning AI models.
-# use:      how AI systems may consume the content (immediate, reference, or full).
-
-# ANY RESTRICTIONS EXPRESSED VIA CONTENT SIGNALS ARE EXPRESS RESERVATIONS OF
-# RIGHTS UNDER ARTICLE 4 OF THE EUROPEAN UNION DIRECTIVE 2019/790 ON COPYRIGHT
-# AND RELATED RIGHTS IN THE DIGITAL SINGLE MARKET.
-
-# BEGIN Cloudflare Managed content
-
-User-agent: *
-Content-Signal: search=yes,ai-train=no,use=reference
-Allow: /
-
-User-agent: Amazonbot
-Disallow: /
-
-User-agent: Applebot-Extended
-Disallow: /
-
-User-agent: Bytespider
-Disallow: /
-
-User-agent: CCBot
-Disallow: /
-
-User-agent: ClaudeBot
-Disallow: /
-
-User-agent: CloudflareBrowserRenderingCrawler
-Disallow: /
-
-# User-agent: Google-Extended
-# Disallow: /
-
-User-agent: GPTBot
-Disallow: /
-
-User-agent: meta-externalagent
-Disallow: /
-
-# END Cloudflare Managed Content
-    "#,
-    )?;
+    fs::write(source_dir.join("robots.txt"), BASE_ROBOTS)?;
     Ok(())
 }
 
@@ -122,92 +56,13 @@ fn write_base_theme(layout_dir: &Path) -> Result<()> {
 }
 
 /// Generate the `.gitignore` for a site repository.
-fn base_gitignore_text() -> &'static str {
-    r#"# Generated build output
-public/
-
-# Editor and OS noise
-.DS_Store
-*.swp
-*~
-"#
-}
+const BASE_GITIGNORE: &str = include_str!("./template/gitignore");
 
 /// Generate the GitHub Pages deployment workflow.
-fn base_deploy_yml_text() -> &'static str {
-    r#"name: Deploy to GitHub Pages
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      # Point this at your fork of tless if you maintain one
-      - name: Install tless
-        run: cargo install --git https://github.com/iskyrainy/tless --locked
-
-      - name: Build static site
-        run: tless site -g
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: public
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-"#
-}
+const BASE_DEPLOY_YML: &str = include_str!("./template/deploy.yml");
 
 /// Generate a base configuration file content.
-fn base_config_text() -> String {
-    String::from(
-        r#"# Tless configuration
-# Update these values for your own site before publishing.
-[site]
-title = "My Tless Site"
-description = "A fast blog powered by Tless."
-author = "Your Name"
-url = "http://127.0.0.1:8917"
-zone = "UTC"
-theme = "base"
-favicon = ""
-menu = [
-    { name = "Home", link = "/index.html" },
-    { name = "Example Post", link = "/post/hello-tless" },
-    { name = "Rust Tag", link = "/tag/rust" },
-    { name = "General Category", link = "/category/general" }
-]
-"#,
-    )
-}
+const BASE_TLESS_CONF: &str = include_str!("./template/tless.toml");
 
 fn base_style_text() -> &'static str {
     r#"

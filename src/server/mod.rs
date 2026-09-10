@@ -40,7 +40,9 @@ pub(crate) struct Config {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct SiteConfig {
     pub title: String,
+    pub subtitle: String,
     pub description: String,
+    pub rights: String,
     pub author: String,
     pub url: String,
     pub zone: String,
