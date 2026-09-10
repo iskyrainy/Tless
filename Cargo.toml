@@ -35,9 +35,6 @@ tera = { version = "2.3.0", features = ["fast", "glob_fs"] }
 sha2 = "0.11.0"
 pulldown-cmark = "0.13.4"
 futures = "0.3.34"
-
-# TODO: encode in easy code then remove data-encoding
-data-encoding = "2.11.1"
 rhai = { version = "1.26.0", features = ["metadata", "sync"] }
 anyhow = "1.0.104"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

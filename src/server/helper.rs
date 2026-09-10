@@ -3,7 +3,6 @@
 use std::{fmt::Write, fs, path::Path, sync::Arc};
 
 use chrono::{DateTime, NaiveDateTime, Utc};
-use data_encoding::HEXUPPER;
 use pulldown_cmark::{Event, HeadingLevel, Parser as MarkdownParser, Tag, TagEnd};
 use rhai::{AST, Dynamic, Engine, Map as RhaiMap};
 use sha2::{Digest, Sha256};
@@ -243,7 +242,12 @@ fn gravatar_helper(kwargs: Kwargs, _state: &State) -> TeraResult<Value> {
     let mail = kwargs.must_get::<String>("mail")?;
     let mut hashed_email = Sha256::new();
     hashed_email.update(mail.trim());
-    let hash = HEXUPPER.encode(hashed_email.finalize().as_ref());
+    let hash = hashed_email
+        .finalize()
+        .0
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect::<String>();
     let url = format!("https://www.gravatar.com/avatar/{hash}");
     Ok(Value::normal_string(&url))
 }
@@ -896,7 +900,12 @@ mod tests {
         hasher.update("test@example.com");
         let expected = format!(
             "https://www.gravatar.com/avatar/{}",
-            HEXUPPER.encode(hasher.finalize().as_ref())
+            hasher
+                .finalize()
+                .0
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<String>()
         );
         assert_eq!(
             render(r#"{{ gravatar(mail="test@example.com") }}"#),

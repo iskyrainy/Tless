@@ -11,7 +11,7 @@ use pulldown_cmark::{Options, Parser, html};
 use tera::Context;
 use tokio::{
     fs::{self, File},
-    io::{AsyncWriteExt, BufWriter},
+    io::AsyncWriteExt,
 };
 use tracing::{error, info};
 
@@ -56,10 +56,9 @@ async fn render_file_class(metadata: &Metadata) -> Result<()> {
                     context.insert("site", SITE.load().as_ref());
                     match TERA.load().render("category.html", &context) {
                         Ok(rendered) => {
-                            let file = File::create(dst_dir.join("index.html")).await?;
-                            let mut writer = BufWriter::new(file);
-                            writer.write_all(rendered.as_bytes()).await?;
-                            writer.flush().await?;
+                            let mut file = File::create(dst_dir.join("index.html")).await?;
+                            file.write_all_buf(&mut rendered.as_bytes()).await?;
+                            file.flush().await?;
                         }
                         Err(e) => {
                             return Err(anyhow!(
@@ -90,10 +89,9 @@ async fn render_file_class(metadata: &Metadata) -> Result<()> {
                     context.insert("site", SITE.load().as_ref());
                     match TERA.load().render("tag.html", &context) {
                         Ok(rendered) => {
-                            let file = File::create(dst_dir.join("index.html")).await?;
-                            let mut writer = BufWriter::new(file);
-                            writer.write_all(rendered.as_bytes()).await?;
-                            writer.flush().await?;
+                            let mut file = File::create(dst_dir.join("index.html")).await?;
+                            file.write_all_buf(&mut rendered.as_bytes()).await?;
+                            file.flush().await?;
                         }
                         Err(e) => {
                             return Err(anyhow!("Failed to render {} tag: {}", &metadata.title, e));
@@ -138,10 +136,9 @@ async fn render_file(src: &PathBuf, dst: &PathBuf, rt: RenderType) -> Result<()>
     });
     match TERA.load().render(layout, &context) {
         Ok(rendered) => {
-            let file = File::create(dst).await?;
-            let mut writer = BufWriter::new(file);
-            writer.write_all(rendered.as_bytes()).await?;
-            writer.flush().await?;
+            let mut file = File::create(dst).await?;
+            file.write_all_buf(&mut rendered.as_bytes()).await?;
+            file.flush().await?;
         }
         Err(e) => {
             return Err(anyhow!("Failed to render {}: {}", &metadata.title, e));
@@ -204,11 +201,10 @@ async fn render_class() -> Result<()> {
     context.insert("site", SITE.load().as_ref());
     match TERA.load().render("category-index.html", &context) {
         Ok(rendered) => {
-            let file =
+            let mut file =
                 File::create(get_public_path(".").join("category").join("index.html")).await?;
-            let mut writer = BufWriter::new(file);
-            writer.write_all(rendered.as_bytes()).await?;
-            writer.flush().await?;
+            file.write_all_buf(&mut rendered.as_bytes()).await?;
+            file.flush().await?;
         }
         Err(e) => {
             return Err(anyhow!("Failed to render category dir: {}", e));
@@ -216,10 +212,10 @@ async fn render_class() -> Result<()> {
     };
     match TERA.load().render("tag-index.html", &context) {
         Ok(rendered) => {
-            let file = File::create(get_public_path(".").join("tag").join("index.html")).await?;
-            let mut writer = BufWriter::new(file);
-            writer.write_all(rendered.as_bytes()).await?;
-            writer.flush().await?;
+            let mut file =
+                File::create(get_public_path(".").join("tag").join("index.html")).await?;
+            file.write_all_buf(&mut rendered.as_bytes()).await?;
+            file.flush().await?;
         }
         Err(e) => {
             return Err(anyhow!("Failed to render tag dir: {}", e));
@@ -332,7 +328,12 @@ async fn gen_atom_str() -> String {
         );
         let _ = writeln!(xml, "    <published>{}</published>", &post.date);
         let _ = writeln!(xml, "    <title>{}</title>", escape_xml(&post.title));
-        let _ = writeln!(xml, "    <updated>{}</updated>", &post.date);
+        if let Ok(m) = fs::metadata(&post.path).await
+            && let Ok(updated) = m.modified()
+        {
+            let updated: DateTime<Local> = DateTime::from(updated);
+            let _ = writeln!(xml, "    <updated>{}</updated>", updated);
+        }
         let _ = writeln!(xml, "  </entry>");
     }
     let _ = writeln!(xml, "</feed>");
@@ -347,8 +348,46 @@ async fn gen_atom() -> Result<()> {
     Ok(())
 }
 
+async fn gen_sitemap_str() -> String {
+    let site = SITE.load();
+    let mut xml = String::with_capacity(40960);
+    let root_path = extract_root_path(&site.config.url);
+    let root_esc = escape_xml(&root_path);
+
+    let _ = writeln!(xml, r#"<?xml version="1.0" encoding="utf-8"?>"#);
+    let _ = writeln!(
+        xml,
+        r#"<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">"#
+    );
+    for post in &site.post {
+        let Some(name) = post
+            .path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+        else {
+            continue;
+        };
+        let name_esc = escape_xml(&name);
+        let _ = writeln!(xml, "  <url>");
+        let _ = writeln!(xml, r#"  <loc>{root_esc}/post/{name_esc}</loc>"#);
+        if let Ok(m) = fs::metadata(&post.path).await
+            && let Ok(updated) = m.modified()
+        {
+            let updated: DateTime<Local> = DateTime::from(updated);
+            let _ = writeln!(xml, r#"  <lastmod>{}</lastmod>"#, updated);
+        }
+        let _ = writeln!(xml, "  </url>");
+    }
+    let _ = writeln!(xml, "</urlset>");
+
+    xml
+}
+
 async fn gen_sitemap() -> Result<()> {
-    todo!()
+    let dst = get_public_path("sitemap.xml");
+    let sitemap_str = gen_sitemap_str().await;
+    fs::write(dst, sitemap_str).await?;
+    Ok(())
 }
 
 /// Render the whole site to the public dir: every post and page, the home
@@ -363,9 +402,6 @@ pub async fn render_all() -> Result<()> {
 
     copy_robots().await?;
 
-    // TODO: sitemap.xml
-    gen_sitemap().await?;
-
     // gen home: index
     render_home(&site).await?;
 
@@ -375,7 +411,10 @@ pub async fn render_all() -> Result<()> {
     // render posts/pages
     render_post(site.post.iter().map(|d| &d.path).collect::<Vec<_>>()).await?;
     render_page(site.page.iter().map(|d| &d.path).collect::<Vec<_>>()).await?;
+
+    // gen atom.xml sitemap.xml
     gen_atom().await?;
+    gen_sitemap().await?;
     Ok(())
 }
 
