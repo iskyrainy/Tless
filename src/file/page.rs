@@ -17,7 +17,7 @@ impl ValidEntity for Page {
             bail!("Name is too long: {0} characters (max: 100)", name.len());
         }
 
-        let slug = Self::generate_slug(name);
+        let slug = Self::slugify(name);
 
         if slug.is_empty() {
             bail!("Invalid characters in name");
@@ -50,7 +50,7 @@ impl Page {
 
     /// Remove an existing page file.
     pub fn remove(name: &str) -> Result<()> {
-        let slug = Self::generate_slug(name);
+        let slug = Self::slugify(name);
         let file_path = get_path(&slug, "page");
         if !is_file_exist(&file_path) {
             bail!("Page does not exist.");

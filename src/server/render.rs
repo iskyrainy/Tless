@@ -368,6 +368,7 @@ async fn gen_atom_str() -> String {
             .await
             .unwrap_or_default();
 
+        // TODO: content not gen correctly
         let _ = writeln!(
             xml,
             "    <content type=\"html\">{}</content>",
@@ -381,7 +382,7 @@ async fn gen_atom_str() -> String {
         );
         let _ = writeln!(
             xml,
-            r#"    <link href="{root_esc}/post/{name_esc}" rel="self" type="application/atom+xml"/>"#
+            r#"    <link href="{root_esc}/post/{name_esc}" rel="self"/>"#
         );
 
         let summary = truncate_chars(&content, 200);
@@ -390,6 +391,8 @@ async fn gen_atom_str() -> String {
             "    <summary type=\"html\">{}</summary>",
             escape_xml(&summary)
         );
+
+        // TODO: time format in RFC 3339
         let _ = writeln!(xml, "    <published>{}</published>", &post.date);
         let _ = writeln!(xml, "    <title>{}</title>", escape_xml(&post.title));
         if let Ok(m) = fs::metadata(&post.path).await

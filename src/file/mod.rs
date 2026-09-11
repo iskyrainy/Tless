@@ -46,11 +46,13 @@ pub(crate) fn get_path(name: &str, class: &str) -> PathBuf {
 }
 
 /// Check whether a file exists.
+#[inline]
 pub(crate) fn is_file_exist(path: &Path) -> bool {
     path.exists()
 }
 
 /// Current timestamp formatted in the configured `[site] zone`, falling back to UTC.
+#[inline]
 pub(crate) fn current_timestamp() -> String {
     const FMT: &str = "%Y-%m-%d %H:%M:%S";
     configured_timezone()
@@ -58,6 +60,7 @@ pub(crate) fn current_timestamp() -> String {
         .unwrap_or_else(|| Utc::now().format(FMT).to_string())
 }
 
+#[inline]
 fn configured_timezone() -> Option<Tz> {
     let site = SITE.load();
     site.config.zone.trim().parse::<Tz>().ok()
@@ -72,15 +75,16 @@ pub fn parse_file(path: &PathBuf) -> Result<(Metadata, String)> {
     }
     let (frontmatter, md_body) = frontmatter_gen::extract(&text)?;
     let mut metadata = Metadata::new();
-    metadata.title = path
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .to_string()
-        .strip_suffix(".md")
-        .unwrap_or_default()
-        .to_string();
     metadata.path = path.clone();
+    if let Some(title) = frontmatter.get("title").and_then(|v| v.as_str()) {
+        metadata.title = title.to_string();
+    } else {
+        metadata.title = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+    }
     if let Some(date) = frontmatter.get("date").and_then(|v| v.as_str()) {
         metadata.date = date.to_string();
     }
@@ -107,14 +111,20 @@ pub fn parse_file(path: &PathBuf) -> Result<(Metadata, String)> {
 pub(crate) trait ValidEntity {
     fn validate_and_get_path(name: &str) -> Result<PathBuf>;
 
-    fn generate_slug(input: &str) -> String {
-        input
-            .to_lowercase()
-            .chars()
-            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
-            .collect::<String>()
-            .split_whitespace()
-            .collect::<Vec<&str>>()
-            .join("-")
+    #[inline]
+    fn slugify(input: &str) -> String {
+        let mut slug = String::new();
+        let mut prev_dash = false;
+        for ch in input.chars() {
+            let lower = ch.to_ascii_lowercase();
+            if lower.is_ascii_alphanumeric() {
+                slug.push(lower);
+                prev_dash = false;
+            } else if !prev_dash && !slug.is_empty() {
+                slug.push('-');
+                prev_dash = true;
+            }
+        }
+        slug.trim_matches('-').to_string()
     }
 }

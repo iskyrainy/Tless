@@ -17,7 +17,7 @@ impl ValidEntity for Blog {
             bail!("Name is too long: {0} characters (max: 100)", name.len());
         }
 
-        let slug = Self::generate_slug(name);
+        let slug = Self::slugify(name);
 
         if slug.is_empty() {
             bail!("Invalid characters in name");
@@ -52,7 +52,7 @@ impl Blog {
 
     /// Remove an existing blog file.
     pub fn remove(name: &str, class: &str) -> Result<()> {
-        let slug = Self::generate_slug(name);
+        let slug = Self::slugify(name);
         let file_path = get_path(&slug, class);
         if !is_file_exist(&file_path) {
             bail!("Blog does not exist.");
@@ -64,7 +64,7 @@ impl Blog {
 
     /// Publish a draft blog by moving it to the post class and updating its frontmatter.
     pub fn publish(name: &str) -> Result<()> {
-        let slug = Self::generate_slug(name);
+        let slug = Self::slugify(name);
         let draft_path = get_path(&slug, "draft");
         if !is_file_exist(&draft_path) {
             bail!("Draft blog does not exist");

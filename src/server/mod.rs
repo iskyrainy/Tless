@@ -63,6 +63,7 @@ pub(crate) struct Menu {
 }
 
 /// Get the path to the configuration file (`tless.toml`) in the current directory.
+#[inline]
 fn get_config_path() -> PathBuf {
     BASE_DIR.join("tless.toml")
 }
@@ -118,6 +119,7 @@ pub(crate) struct ClassMap {
 }
 
 /// Get the path to the source dir (`./source`) in the current directory.
+#[inline]
 pub(crate) fn get_source_path<'a, S: Into<&'a str>>(name: S) -> PathBuf {
     BASE_DIR.join("source").join(name.into())
 }
@@ -289,6 +291,7 @@ async fn watch_source(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> 
     Ok(())
 }
 
+#[inline]
 pub(crate) fn get_layout_path() -> PathBuf {
     let dir = BASE_DIR.join("theme").join(&SITE.load().config.theme);
     if dir.exists() {
@@ -369,6 +372,7 @@ async fn watch_layout(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> 
     Ok(())
 }
 
+#[inline]
 pub(crate) fn get_public_path<'a, S: Into<&'a str>>(name: S) -> PathBuf {
     BASE_DIR.join("public").join(name.into())
 }

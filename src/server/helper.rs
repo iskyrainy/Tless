@@ -22,6 +22,7 @@ pub(crate) fn register_helpers(tera: &mut Tera) {
     tera.register_function("number_format", number_format_helper);
     tera.register_function("open_graph", open_graph_helper);
     tera.register_function("toc", toc_helper);
+    tera.register_function("slugify", to_slug);
     register_tag_helpers(tera);
     register_list_helpers(tera);
 }
@@ -633,6 +634,11 @@ fn level_to_usize(level: HeadingLevel) -> usize {
         HeadingLevel::H5 => 5,
         HeadingLevel::H6 => 6,
     }
+}
+
+fn to_slug(kwargs: Kwargs, _state: &State) -> TeraResult<Value> {
+    let input = kwargs.must_get::<String>("str")?;
+    Ok(Value::normal_string(&slugify(input.as_str())))
 }
 
 /// Slug used for heading anchors, shared by the `toc` helper and the
