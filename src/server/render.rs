@@ -5,7 +5,8 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
-use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use chrono::{DateTime, Local};
+use chrono_tz::Tz;
 use futures::{StreamExt, stream};
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, html};
 use tera::Context;
@@ -364,11 +365,10 @@ async fn gen_atom_str() -> String {
                 let _ = writeln!(xml, "    <category>{}</category>", escape_xml(c));
             }
         }
-        let content = fs::read_to_string(get_public_path(name.as_str()).join("index.html"))
+        let content = fs::read_to_string(get_public_path("post").join(&name).join("index.html"))
             .await
             .unwrap_or_default();
 
-        // TODO: content not gen correctly
         let _ = writeln!(
             xml,
             "    <content type=\"html\">{}</content>",
@@ -392,14 +392,13 @@ async fn gen_atom_str() -> String {
             escape_xml(&summary)
         );
 
-        // TODO: time format in RFC 3339
         let _ = writeln!(xml, "    <published>{}</published>", &post.date);
         let _ = writeln!(xml, "    <title>{}</title>", escape_xml(&post.title));
         if let Ok(m) = fs::metadata(&post.path).await
             && let Ok(updated) = m.modified()
         {
             let updated: DateTime<Local> = DateTime::from(updated);
-            let _ = writeln!(xml, "    <updated>{}</updated>", updated);
+            let _ = writeln!(xml, "    <updated>{}</updated>", updated.to_rfc3339());
         }
         let _ = writeln!(xml, "  </entry>");
     }
@@ -535,18 +534,15 @@ fn recent_posts(site: &Site) -> Vec<file::Metadata> {
     posts
 }
 
-/// Parse a frontmatter date (RFC3339 or the CLI `%Y-%m-%d %H:%M:%S` format);
+/// Parse a frontmatter date (RFC3339 format);
 /// posts without a usable date sort last.
-fn date_rank(date: &str) -> DateTime<Utc> {
+fn date_rank(date: &str) -> DateTime<Tz> {
+    let site = SITE.load();
+    let tz = site.get_zone();
     DateTime::parse_from_rfc3339(date)
-        .map(|d| d.with_timezone(&Utc))
+        .map(|d| d.with_timezone(&tz))
         .ok()
-        .or_else(|| {
-            NaiveDateTime::parse_from_str(date, "%Y-%m-%d %H:%M:%S")
-                .ok()
-                .map(|d| d.and_utc())
-        })
-        .unwrap_or(DateTime::<Utc>::MIN_UTC)
+        .unwrap_or(DateTime::<Tz>::MIN_UTC.with_timezone(&tz))
 }
 
 /// Copy the active theme's `resource/` directory into `public/`.

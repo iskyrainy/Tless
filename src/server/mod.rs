@@ -9,6 +9,7 @@ use std::{
 
 use anyhow::{Result, anyhow};
 use arc_swap::ArcSwap;
+use chrono_tz::Tz;
 use notify::EventKind;
 use notify_debouncer_full::{DebouncedEvent, new_debouncer};
 use serde::{Deserialize, Serialize};
@@ -50,6 +51,14 @@ pub(crate) struct SiteConfig {
     pub theme: String,
     pub favicon: String,
     pub menu: Vec<Menu>,
+    #[serde(skip)]
+    inner_zone: Option<Tz>,
+}
+
+impl Site {
+    pub fn get_zone(&self) -> Tz {
+        self.config.inner_zone.unwrap_or_default()
+    }
 }
 
 /// Menu item structure for site navigation.
@@ -143,7 +152,10 @@ fn get_site() -> Site {
     let page_dir = get_source_path("page");
     let mut site = Site::new();
     site.config = match get_config_toml() {
-        Ok(config) => config.site,
+        Ok(mut config) => {
+            config.site.inner_zone = config.site.zone.trim().parse::<Tz>().ok();
+            config.site
+        }
         Err(e) => error::fatal(format!("{e:#}")),
     };
 

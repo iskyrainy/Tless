@@ -12,5 +12,7 @@ theme = "base"
 favicon = ""
 menu = [
     { name = "Home", link = "/index.html" },
+    { name = "Tags", link = "/tag" },
+    { name = "Categories", link = "/category" },
 ]
 

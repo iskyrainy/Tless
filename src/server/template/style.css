@@ -56,6 +56,11 @@ html {
 }
 
 body {
+    /* sticky footer: the column layout lets `.main` fill any leftover height */
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
     margin: 0;
     background: var(--theme);
     color: var(--content);
@@ -166,7 +171,9 @@ html[data-theme="dark"] .icon-sun {
 
 /* Main column */
 .main {
+    flex: 1 0 auto;
     max-width: var(--main-width);
+    width: 100%;
     margin: 0 auto;
     padding: var(--gap) var(--gap) 0;
 }
@@ -504,6 +511,7 @@ details.toc a:hover {
 /* Footer */
 .footer {
     max-width: var(--main-width);
+    width: 100%;
     margin: 0 auto;
     padding: calc(var(--gap) * 2) var(--gap) var(--gap);
     color: var(--secondary);

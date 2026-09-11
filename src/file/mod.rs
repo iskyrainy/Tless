@@ -8,7 +8,6 @@ use std::{
 
 use anyhow::{Result, anyhow};
 use chrono::Utc;
-use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
 use crate::{BASE_DIR, server::SITE};
@@ -54,16 +53,8 @@ pub(crate) fn is_file_exist(path: &Path) -> bool {
 /// Current timestamp formatted in the configured `[site] zone`, falling back to UTC.
 #[inline]
 pub(crate) fn current_timestamp() -> String {
-    const FMT: &str = "%Y-%m-%d %H:%M:%S";
-    configured_timezone()
-        .map(|tz| Utc::now().with_timezone(&tz).format(FMT).to_string())
-        .unwrap_or_else(|| Utc::now().format(FMT).to_string())
-}
-
-#[inline]
-fn configured_timezone() -> Option<Tz> {
     let site = SITE.load();
-    site.config.zone.trim().parse::<Tz>().ok()
+    Utc::now().with_timezone(&site.get_zone()).to_rfc3339()
 }
 
 /// Parse the frontmatter and file name of a source file into [Metadata].

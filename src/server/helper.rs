@@ -30,8 +30,8 @@ pub(crate) fn register_helpers(tera: &mut Tera) {
 /// Fallback amount for list helpers when no `amount` arg is given (effectively unlimited).
 const DEFAULT_AMOUNT: usize = 1 << 16;
 
-/// Parse a date string as RFC3339 or the `%Y-%m-%d %H:%M:%S` format used by the CLI.
-fn parse_datetime(s: &str) -> Option<DateTime<Utc>> {
+/// Parse a date string as RFC3339 format used by the CLI.
+fn parse_datetime(s: &str) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(s)
         .map(|dt| dt.with_timezone(&Utc))
         .ok()
@@ -40,6 +40,7 @@ fn parse_datetime(s: &str) -> Option<DateTime<Utc>> {
                 .ok()
                 .map(|dt| dt.and_utc())
         })
+        .unwrap_or(Utc::now())
 }
 
 fn is_absolute_url(path: &str) -> bool {
@@ -63,7 +64,7 @@ fn date_helper(kwargs: Kwargs, _state: &State) -> TeraResult<Value> {
             } else if let Some(ts) = ts.as_f64() {
                 ts as i64
             } else if let Some(s) = ts.as_str() {
-                parse_datetime(s).unwrap_or_else(Utc::now).timestamp()
+                parse_datetime(s).timestamp()
             } else {
                 return Err(Error::message(
                     "Invalid 'ts': expected an epoch number or a date string",
@@ -377,8 +378,8 @@ fn list_call(kwargs: Kwargs, kind: ListKind) -> TeraResult<Value> {
                 _ => unreachable!(),
             };
             tmp.sort_by(|x, y| {
-                let x_date = parse_datetime(&x.date).unwrap_or_else(Utc::now);
-                let y_date = parse_datetime(&y.date).unwrap_or_else(Utc::now);
+                let x_date = parse_datetime(&x.date);
+                let y_date = parse_datetime(&y.date);
                 if order == -1 {
                     y_date.cmp(&x_date)
                 } else {
@@ -1056,15 +1057,8 @@ mod tests {
     fn parse_datetime_accepts_rfc3339_and_cli_format() {
         // both formats describe 2026-09-01T12:00:00Z
         let expected = 1788264000;
-        assert_eq!(
-            parse_datetime("2026-09-01T12:00:00Z").unwrap().timestamp(),
-            expected
-        );
-        assert_eq!(
-            parse_datetime("2026-09-01 12:00:00").unwrap().timestamp(),
-            expected
-        );
-        assert!(parse_datetime("garbage").is_none());
+        assert_eq!(parse_datetime("2026-09-01T12:00:00Z").timestamp(), expected);
+        assert_eq!(parse_datetime("2026-09-01 12:00:00").timestamp(), expected);
     }
 
     #[test]
