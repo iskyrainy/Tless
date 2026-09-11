@@ -1,0 +1,18 @@
+# Tless configuration
+# Update these values for your own site before publishing.
+[site]
+title = "My Tless Site"
+subtitle = "hello"
+description = "A fast blog powered by Tless."
+rights = "All rights reserved Tless"
+author = "Tless"
+url = "http://127.0.0.1:8917"
+zone = "UTC"
+theme = "base"
+favicon = ""
+menu = [
+    { name = "Home", link = "/index.html" },
+    { name = "Tags", link = "/tag" },
+    { name = "Categories", link = "/category" },
+]
+

@@ -2,18 +2,40 @@
 name = "tless"
 version = "0.1.0"
 edition = "2024"
+authors = ["gdhvxcj <wangnan5117@gmail.com>"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
 
 [profile.dev]
-opt-level = 0
+opt-level = 0 # Optimization level: 0-3, "s" (size), "z" (extra size)
 
 [profile.release]
-opt-level = 3
+opt-level = 3     # Optimization level: 0-3, "s" (size), "z" (extra size)
+lto = true        # Link-Time Optimization (true/false/"thin") for cross-crate optimization
+codegen-units = 1 # Reduce parallel compilation blocks to 1 for better optimizations
+strip = true      # Automatically strip symbols and debug info (true/"debuginfo"/"symbols")
+debug = false     # Exclude debug symbols entirely
 
 [dependencies]
-axum = "0.8.4"
-chrono = "0.4.41"
-clap = { version = "4.5.46", features = ["derive"] }
-frontmatter-gen = "0.0.5"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_yaml = "0.9.34"
-tokio = { version = "1.47.1", features = ["full"] }
+actix-web = "4"
+arc-swap = "1.9.2"
+chrono = "0.4.45"
+chrono-tz = "0.10.4"
+clap = { version = "4.6.6", features = ["derive"] }
+notify-debouncer-full = "0.7.0"
+notify = { version = "8.2.0", features = ["serde"] }
+
+# TODO: decode in easy code then remove frontmatter-gen
+frontmatter-gen = "0.0.11"
+serde = { version = "1.0.229", features = ["derive"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
+toml = "1.1.4"
+tera = { version = "2.3.0", features = ["fast", "glob_fs"] }
+sha2 = "0.11.0"
+pulldown-cmark = "0.13.4"
+futures = "0.3.34"
+rhai = { version = "1.26.0", features = ["metadata", "sync"] }
+anyhow = "1.0.104"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tracing = "0.1.44"

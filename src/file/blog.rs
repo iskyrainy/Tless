@@ -1,106 +1,91 @@
-use std::{error::Error, fs};
+use std::{fs, path::PathBuf};
 
-use chrono::Utc;
+use anyhow::{Result, bail};
+use tracing::info;
 
-use crate::file::{get_path, is_file_exist, parse_file};                                                                                   
+use crate::file::{ValidEntity, current_timestamp, get_path, is_file_exist, parse_file};
 
-/// Add a new blog file with default content.
-/// # Arguments
-/// * `name` - A reference to a `String` representing the blog name.
-/// * `class` - A reference to a `String` representing the blog class (e.g., "draft", "post").
-/// # Returns
-/// A `Result` indicating success or failure.
-/// # Examples
-/// ```
-/// let name = String::from("my_new_blog");
-/// let class = String::from("draft");
-/// match add_blog(&name, &class) {
-///     Ok(_) => println!("Blog added successfully."),
-///     Err(e) => eprintln!("Failed to add blog: {}", e),
-/// }
-/// ```
-pub fn add_blog(name: &String) -> Result<(), Box<dyn Error>> {
-    let class = String::from("draft");
-    let file_path = get_path(name, &class);
-    if is_file_exist(&file_path) {
-        return Err("Blog already exists.".into());
+pub struct Blog;
+
+impl ValidEntity for Blog {
+    fn validate_and_get_path(name: &str) -> Result<PathBuf> {
+        if name.trim().is_empty() {
+            bail!("Name cannot be empty");
+        }
+
+        if name.len() > 100 {
+            bail!("Name is too long: {0} characters (max: 100)", name.len());
+        }
+
+        let slug = Self::slugify(name);
+
+        if slug.is_empty() {
+            bail!("Invalid characters in name");
+        }
+
+        let file_path = get_path(&slug, "draft");
+        if is_file_exist(&file_path) {
+            bail!("Blog already exists.");
+        }
+        Ok(file_path)
     }
-    // todo: time zone support
-    fs::write(&file_path, base_blog_text(name))?;
-    println!("Blog '{}' created in 'draft'.", file_path);
-    Ok(())
 }
 
-fn base_blog_text(name: &String) -> String {
-    format!("---\ntitle: {}\ndate: {}\ntags:\ncategories:\n---\n\n# New Blog\nWrite your content here.\n", 
-        name, 
-        Utc::now().format("%Y-%m-%d %H:%M:%S")
-    )
-}
+impl Blog {
+    /// Add a new draft blog file.
+    pub fn add(name: &str) -> Result<()> {
+        let file_path = Self::validate_and_get_path(name)?;
+        fs::write(&file_path, Self::base_blog_text())?;
+        info!("Blog '{}' created in 'draft'", file_path.display());
+        Ok(())
+    }
 
-/// Remove an existing blog file.
-/// # Arguments
-/// * `name` - A reference to a `String` representing the blog name.
-/// * `class` - A reference to a `String` representing the blog class (e.g., "draft", "post").
-/// # Returns
-/// A `Result` indicating success or failure.
-/// # Examples
-/// ```
-/// let name = String::from("my_old_blog");
-/// let class = String::from("post");
-/// match remove_blog(&name, &class) {
-///     Ok(_) => println!("Blog removed successfully."),
-///     Err(e) => eprintln!("Failed to remove blog: {}", e),
-/// }
-/// ```
-pub fn remove_blog(name: &String, class: &String) -> Result<(), Box<dyn Error>> {
-    let file_path = get_path(name, class);
-    if !is_file_exist(&file_path) {
-        return Err("Blog does not exist.".into());
+    #[inline]
+    fn base_blog_text() -> String {
+        // empty arrays instead of null values: the frontmatter parser rejects
+        // keys without a value
+        format!(
+            "---\ndate: {}\ntag: []\ncategory: []\n---\n\n# New Blog\nWrite your content here.\n",
+            current_timestamp()
+        )
     }
-    fs::remove_file(&file_path)?;
-    println!("Blog '{}' removed from '{}'.", name, class);
-    Ok(())
-}
 
-/// Publish a draft blog by moving it to the post class and updating its metadata.
-/// # Arguments
-/// * `name` - A reference to a `String` representing the blog name.
-/// * `prva` - A boolean indicating if the blog should be marked as private.
-/// # Returns
-/// A `Result` indicating success or failure.
-/// # Examples
-/// ```
-/// let name = String::from("my_draft_blog");
-/// let prva = false;
-/// match publish_blog(&name, prva) {
-///     Ok(_) => println!("Blog published successfully."),
-///     Err(e) => eprintln!("Failed to publish blog: {}", e),
-/// }
-/// ```
-pub fn publish_blog(name: &String, prva: bool) -> Result<(), Box<dyn Error>> {
-    let draft_path = get_path(name, &String::from("draft"));
-    if !is_file_exist(&draft_path) {
-        return Err("Draft blog does not exist.".into());
+    /// Remove an existing blog file.
+    pub fn remove(name: &str, class: &str) -> Result<()> {
+        let slug = Self::slugify(name);
+        let file_path = get_path(&slug, class);
+        if !is_file_exist(&file_path) {
+            bail!("Blog does not exist.");
+        }
+        fs::remove_file(&file_path)?;
+        info!("Blog '{}' removed from '{}'", name, class);
+        Ok(())
     }
-    let post_path = get_path(name, &String::from("post"));
-    if is_file_exist(&post_path) {
-        return Err("Post blog already exists.".into());
+
+    /// Publish a draft blog by moving it to the post class and updating its frontmatter.
+    pub fn publish(name: &str) -> Result<()> {
+        let slug = Self::slugify(name);
+        let draft_path = get_path(&slug, "draft");
+        if !is_file_exist(&draft_path) {
+            bail!("Draft blog does not exist");
+        }
+        let post_path = get_path(&slug, "post");
+        if is_file_exist(&post_path) {
+            bail!("Post blog already exists");
+        }
+        let (metadata, md_body) = parse_file(&draft_path)?;
+        let frontmatter = format!(
+            "---\ntitle: {}\ndate: {}\ntag: {}\ncategory: {}\nlayout: {}\n---\n\n",
+            metadata.title,
+            current_timestamp(),
+            format_args!("[{}]", metadata.tag.unwrap_or_default().join(", ")),
+            format_args!("[{}]", metadata.category.unwrap_or_default().join(", ")),
+            metadata.layout.unwrap_or("post.html".to_string()),
+        );
+        let content = format!("{}{}", frontmatter, md_body);
+        fs::write(&post_path, content)?;
+        fs::remove_file(&draft_path)?;
+        info!("Blog '{}' published from 'draft' to 'post'", name);
+        Ok(())
     }
-    let file = fs::File::open(&draft_path)?;
-    let metadata = parse_file(file)?;
-    // todo: time zone support
-    let frontmatter = format!(
-        "---\ntitle: {}\ndate: {}\ntags: {}\ncategories: {}\nprva: {}\n---\n\n",
-        metadata.title,
-        Utc::now().format("%Y-%m-%d %H:%M:%S"),
-        format!("[{}]", metadata.tags.unwrap_or_default().join(", ")),
-        format!("[{}]", metadata.categories.unwrap_or_default().join(", ")),
-        prva
-    );
-    let content = format!("{}{}", frontmatter, metadata.content);
-    fs::write(&post_path, content)?;
-    fs::remove_file(&draft_path)?;
-    println!("Blog '{}' published from 'draft' to 'post'.", name);
-    Ok(())
 }
