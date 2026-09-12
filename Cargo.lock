@@ -1969,7 +1969,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tlass"
+name = "tles"
 version = "0.1.0"
 dependencies = [
  "actix-web",
