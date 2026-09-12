@@ -3,6 +3,10 @@ name = "tless"
 version = "0.1.0"
 edition = "2024"
 authors = ["gdhvxcj <wangnan5117@gmail.com>"]
+description = "A fast, easy blog site builder — write Markdown, preview live, deploy to GitHub Pages."
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/iskyrainy/tless"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
