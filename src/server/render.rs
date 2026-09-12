@@ -115,7 +115,7 @@ async fn render_file_class(metadata: &Metadata) -> Result<()> {
                     Err(e) => {
                         return Err(anyhow!(
                             "Failed to render {} category: {}",
-                            &metadata.title,
+                            metadata.title,
                             e
                         ));
                     }
@@ -158,7 +158,7 @@ async fn render_file_class(metadata: &Metadata) -> Result<()> {
                         file.flush().await?;
                     }
                     Err(e) => {
-                        return Err(anyhow!("Failed to render {} tag: {}", &metadata.title, e));
+                        return Err(anyhow!("Failed to render {} tag: {}", metadata.title, e));
                     }
                 };
                 Ok(())
@@ -202,7 +202,7 @@ async fn render_file(src: &PathBuf, dst: &PathBuf, rt: RenderType) -> Result<()>
             file.flush().await?;
         }
         Err(e) => {
-            return Err(anyhow!("Failed to render {}: {}", &metadata.title, e));
+            return Err(anyhow!("Failed to render {}: {}", metadata.title, e));
         }
     };
     if let RenderType::Post = rt {
@@ -392,7 +392,7 @@ async fn gen_atom_str() -> String {
             escape_xml(&summary)
         );
 
-        let _ = writeln!(xml, "    <published>{}</published>", &post.date);
+        let _ = writeln!(xml, "    <published>{}</published>", post.date);
         let _ = writeln!(xml, "    <title>{}</title>", escape_xml(&post.title));
         if let Ok(m) = fs::metadata(&post.path).await
             && let Ok(updated) = m.modified()
