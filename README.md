@@ -1,4 +1,4 @@
-# tless
+# tles
 
 > A fast, easy blog site builder — write Markdown, preview live, deploy to GitHub Pages.
 
@@ -30,22 +30,22 @@ cargo install --git https://github.com/iskyrainy/tless
 
 # scaffold a new site
 mkdir my-blog && cd my-blog
-tless site -i
+tles site -i
 
 # write your first post
-tless blog add hello
-tless blog publish hello
+tles blog add hello
+tles blog publish hello
 
 # preview at http://127.0.0.1:8917
-tless server -r
+tles server -r
 
 # build the static site into public/
-tless site -g
+tles site -g
 ```
 
 ## Generated site
 
-`tless site -i` produces a self-contained, deploy-ready repository:
+`tles site -i` produces a self-contained, deploy-ready repository:
 
 ```
 .github/workflows/deploy.yml   # GitHub Pages deployment
