@@ -2,10 +2,10 @@ use std::process::ExitCode;
 
 use tracing::error;
 
-use tless::cmd;
+use tles::cmd;
 
 fn main() -> ExitCode {
-    tless::init_logging();
+    tles::init_logging();
     match cmd::parse_cmd() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
