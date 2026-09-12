@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'The version to release (uses Cargo.toml if empty)'
+        default: ''
+        type: string
+
+      release_ref:
+        description: 'The branch, tag or SHA to checkout (default to latest)'
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Publish darklua crate
+    runs-on: ubuntu-latest
+
+    outputs:
+      upload_url: ${{ steps.create.outputs.upload_url }}
+      build_matrix: ${{ steps.create.outputs.build_matrix }}
+
+    steps:
+      - name: Release specific version
+        id: create
+        uses: seaofvoices/rust-release-action@v1
+        with:
+          release_tag: ${{ inputs.release_tag }}
+          release_ref: ${{ inputs.release_ref }}
+          publish_crate: true
+          cargo_token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  build-artifacts:
+    needs: create-release
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.create-release.outputs.build_matrix) }}
+
+    name: Build (${{ matrix.artifact-name }})
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Build artifact
+        id: create_release
+        uses: seaofvoices/rust-build-artifact-action@v1
+        with:
+          release_ref: ${{ inputs.release_ref }}
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          package_name: ${{ matrix.name }}
+          artifact_name: ${{ matrix.artifact_name }}
+          cargo_target: ${{ matrix.name }}
+          linker: ${{ matrix.linker }}
